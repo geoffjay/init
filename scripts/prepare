@@ -5,7 +5,7 @@ set -euo pipefail
 
 # Configuration
 readonly SCRIPT_VERSION="1.0.0"
-readonly ASDF_VERSION="v0.14.0"
+readonly ASDF_VERSION="v0.18.0"
 readonly PROJECT_REPO="https://github.com/geoffjay/init"
 readonly PROJECTS_DIR="$HOME/Projects"
 readonly PROJECT_DIR="$PROJECTS_DIR/init"
@@ -15,6 +15,7 @@ readonly ASDF_DIR="$HOME/.asdf"
 OS=""
 PKG_MGR=""
 ARCH=""
+SELECTED_SHELL=""
 
 # Color codes for output
 readonly RED='\033[0;31m'
@@ -30,16 +31,19 @@ OS Bootstrap Script (version $SCRIPT_VERSION)
 
 DESCRIPTION:
     This script prepares a minimal environment for OS initialization and configuration.
-    It installs git, asdf, and homebrew (on macOS), then clones the project repository.
+    It installs git, asdf (via Homebrew on macOS, git clone on Linux), and homebrew (on macOS),
+    then clones the project repository.
 
 USAGE:
     $0 [OPTIONS]
 
 OPTIONS:
-    -h, --help      Show this help message
-    -v, --version   Show version information
-    --dry-run       Show what would be done without making changes
-    --debug         Enable debug output
+    -h, --help          Show this help message
+    -v, --version       Show version information
+    --dry-run           Show what would be done without making changes
+    --debug             Enable debug output
+    --shell=SHELL       Select shell to install and configure (bash|zsh)
+                        Default: auto-detect current shell
 
 ENVIRONMENT VARIABLES:
     ALLOW_ROOT      Set to 'true' to allow running as root (not recommended)
@@ -56,6 +60,12 @@ EXAMPLES:
 
     # Run via web (typical usage)
     wget -q -O - https://raw.githubusercontent.com/geoffjay/init/main/scripts/prepare | bash
+
+    # Install and configure zsh as the shell
+    $0 --shell=zsh
+
+    # Install and configure bash as the shell
+    $0 --shell=bash
 
     # Dry run to see what would be installed
     $0 --dry-run
@@ -240,6 +250,86 @@ verify_installation() {
     return 0
 }
 
+# Install shell
+install_shell() {
+    local target_shell="$1"
+    log_info "Installing and configuring shell: $target_shell"
+    
+    # Check if shell is already installed
+    if command -v "$target_shell" >/dev/null 2>&1; then
+        local shell_version
+        case "$target_shell" in
+            bash)
+                shell_version=$(bash --version | head -n1 2>/dev/null || echo "unknown")
+                ;;
+            zsh)
+                shell_version=$(zsh --version 2>/dev/null || echo "unknown")
+                ;;
+        esac
+        log_info "$target_shell is already installed ($shell_version)"
+    else
+        if [[ "${DRY_RUN:-}" == "true" ]]; then
+            log_info "[DRY RUN] Would install $target_shell via $PKG_MGR"
+        else
+            log_info "Installing $target_shell..."
+            case $OS in
+                debian-based)
+                    sudo apt update -qq
+                    sudo apt install -y "$target_shell"
+                    ;;
+                alpine)
+                    if [[ $EUID -eq 0 ]]; then
+                        apk update
+                        apk add "$target_shell"
+                    else
+                        sudo apk update
+                        sudo apk add "$target_shell"
+                    fi
+                    ;;
+                macos)
+                    # bash and zsh are usually pre-installed on macOS
+                    if ! command -v "$target_shell" >/dev/null 2>&1; then
+                        log_info "Installing $target_shell via Homebrew..."
+                        brew install "$target_shell"
+                    fi
+                    ;;
+            esac
+            
+            verify_installation "$target_shell" ""
+        fi
+    fi
+    
+    # Set as default shell if requested and different from current
+    local current_shell
+    current_shell=$(basename "$SHELL")
+    if [[ "$current_shell" != "$target_shell" ]]; then
+        if [[ "${DRY_RUN:-}" == "true" ]]; then
+            log_info "[DRY RUN] Would change default shell from $current_shell to $target_shell"
+        else
+            log_info "Setting $target_shell as default shell..."
+            local shell_path
+            shell_path=$(command -v "$target_shell")
+            
+            # Add shell to /etc/shells if not already present
+            if ! grep -q "^$shell_path$" /etc/shells 2>/dev/null; then
+                log_info "Adding $shell_path to /etc/shells"
+                echo "$shell_path" | sudo tee -a /etc/shells >/dev/null
+            fi
+            
+            # Change user's default shell
+            if command -v chsh >/dev/null 2>&1; then
+                chsh -s "$shell_path"
+                log_success "Default shell changed to $target_shell"
+                log_info "Note: You may need to log out and back in for the change to take effect"
+            else
+                log_warn "chsh command not available - you may need to change your shell manually"
+            fi
+        fi
+    else
+        log_info "$target_shell is already the default shell"
+    fi
+}
+
 # Install git
 install_git() {
     log_info "Installing git..."
@@ -292,19 +382,88 @@ install_git() {
 install_asdf() {
     log_info "Installing asdf..."
     
-    # Check if asdf is already installed
-    if [[ -d "$ASDF_DIR" ]] && command -v asdf >/dev/null 2>&1; then
+    # Check if asdf is already installed and working
+    if command -v asdf >/dev/null 2>&1; then
         local asdf_version
         asdf_version=$(asdf version 2>/dev/null || echo "unknown")
         log_info "asdf is already installed ($asdf_version)"
+        
+        # Source asdf if not already sourced (for plugin installation)
+        if [[ -z "${ASDF_DIR_WAS_SET:-}" ]]; then
+            # Try to source existing asdf installation
+            if [[ -f "$HOME/.asdf/asdf.sh" ]]; then
+                # shellcheck source=/dev/null
+                . "$HOME/.asdf/asdf.sh" 2>/dev/null || true
+                export ASDF_DIR_WAS_SET=1
+            elif [[ -f "/opt/homebrew/opt/asdf/libexec/asdf.sh" ]]; then
+                # shellcheck source=/dev/null
+                . "/opt/homebrew/opt/asdf/libexec/asdf.sh" 2>/dev/null || true
+                export ASDF_DIR_WAS_SET=1
+            elif [[ -f "/usr/local/opt/asdf/libexec/asdf.sh" ]]; then
+                # shellcheck source=/dev/null
+                . "/usr/local/opt/asdf/libexec/asdf.sh" 2>/dev/null || true
+                export ASDF_DIR_WAS_SET=1
+            fi
+        fi
+        
+        # Install plugins even if asdf is already installed
+        install_asdf_plugins
         return 0
     fi
     
     if [[ "${DRY_RUN:-}" == "true" ]]; then
-        log_info "[DRY RUN] Would clone asdf to $ASDF_DIR"
+        case $OS in
+            macos)
+                log_info "[DRY RUN] Would install asdf via Homebrew"
+                ;;
+            debian-based|alpine)
+                log_info "[DRY RUN] Would install asdf via git clone to $ASDF_DIR"
+                ;;
+        esac
         log_info "[DRY RUN] Would install asdf plugins: python, uv, direnv"
         return 0
     fi
+    
+    # Install asdf using appropriate method for each platform
+    case $OS in
+        macos)
+            log_info "Installing asdf via Homebrew..."
+            brew install asdf
+            
+            # Source asdf for this script only if not already sourced
+            if [[ -z "${ASDF_DIR_WAS_SET:-}" ]]; then
+                if [[ -f "/opt/homebrew/opt/asdf/libexec/asdf.sh" ]]; then
+                    # Apple Silicon
+                    # shellcheck source=/dev/null
+                    . "/opt/homebrew/opt/asdf/libexec/asdf.sh"
+                    export ASDF_DIR_WAS_SET=1
+                elif [[ -f "/usr/local/opt/asdf/libexec/asdf.sh" ]]; then
+                    # Intel
+                    # shellcheck source=/dev/null
+                    . "/usr/local/opt/asdf/libexec/asdf.sh"
+                    export ASDF_DIR_WAS_SET=1
+                else
+                    log_error "Could not find asdf installation after Homebrew install"
+                    exit 1
+                fi
+            fi
+            ;;
+        debian-based|alpine)
+            log_info "Installing asdf via git clone (Linux)..."
+            install_asdf_from_git
+            return 0
+            ;;
+    esac
+    
+    # Install required asdf plugins
+    install_asdf_plugins
+    
+    verify_installation "asdf" "asdf version"
+}
+
+# Install asdf from git (fallback method)
+install_asdf_from_git() {
+    log_info "Installing asdf from git repository..."
     
     # Remove existing asdf directory if it exists but is broken
     if [[ -d "$ASDF_DIR" ]]; then
@@ -312,22 +471,44 @@ install_asdf() {
         rm -rf "$ASDF_DIR"
     fi
     
-    # Clone asdf repository
+    # Clone asdf repository and checkout specific version
     log_info "Cloning asdf repository..."
-    git clone https://github.com/asdf-vm/asdf.git "$ASDF_DIR" --branch "$ASDF_VERSION"
+    git clone --quiet https://github.com/asdf-vm/asdf.git "$ASDF_DIR"
+    
+    # Checkout the specific version (avoids detached HEAD warnings)
+    log_info "Checking out asdf version $ASDF_VERSION..."
+    cd "$ASDF_DIR"
+    git checkout --quiet "$ASDF_VERSION"
+    cd - >/dev/null
     
     # Add asdf to PATH for this script
     export PATH="$ASDF_DIR/bin:$PATH"
     
-    # Source asdf
-    # shellcheck source=/dev/null
-    . "$ASDF_DIR/asdf.sh"
+    # Source asdf only if not already sourced (to avoid readonly variable error)
+    if [[ -z "${ASDF_DIR_WAS_SET:-}" ]]; then
+        # Source asdf.sh in a way that avoids readonly variable conflicts
+        # shellcheck source=/dev/null
+        if ! . "$ASDF_DIR/asdf.sh" 2>/dev/null; then
+            log_debug "Standard sourcing failed, likely due to readonly ASDF_DIR"
+            # Alternative: just ensure the functions are available via PATH
+            export PATH="$ASDF_DIR/bin:$ASDF_DIR/shims:$PATH"
+        fi
+        export ASDF_DIR_WAS_SET=1
+    fi
     
     # Install required asdf plugins
+    install_asdf_plugins
+    
+    verify_installation "asdf" "asdf version"
+}
+
+# Install required asdf plugins
+install_asdf_plugins() {
     log_info "Installing asdf plugins..."
     
     # Install python plugin
     if ! asdf plugin list | grep -q "^python$"; then
+        log_info "Adding python plugin..."
         asdf plugin add python
         log_success "Added python plugin to asdf"
     else
@@ -336,6 +517,7 @@ install_asdf() {
     
     # Install uv plugin  
     if ! asdf plugin list | grep -q "^uv$"; then
+        log_info "Adding uv plugin..."
         asdf plugin add uv
         log_success "Added uv plugin to asdf"
     else
@@ -344,13 +526,12 @@ install_asdf() {
     
     # Install direnv plugin
     if ! asdf plugin list | grep -q "^direnv$"; then
+        log_info "Adding direnv plugin..."
         asdf plugin add direnv
         log_success "Added direnv plugin to asdf"
     else
         log_info "direnv plugin already installed"
     fi
-    
-    verify_installation "asdf" "asdf version"
 }
 
 # Install Homebrew (macOS only)
@@ -432,64 +613,121 @@ setup_project() {
 setup_shell_integration() {
     log_info "Setting up shell integration..."
     
+    local shell_name=""
+    local shell_config_file=""
+    
+    # Determine which shell to configure
+    if [[ -n "$SELECTED_SHELL" ]]; then
+        shell_name="$SELECTED_SHELL"
+        log_info "Configuring selected shell: $shell_name"
+    else
+        # Auto-detect shell
+        if [[ -n "${BASH_VERSION:-}" ]]; then
+            shell_name="bash"
+        elif [[ -n "${ZSH_VERSION:-}" ]]; then
+            shell_name="zsh"
+        else
+            # Try to detect from SHELL environment variable
+            case "${SHELL:-}" in
+                */bash) shell_name="bash" ;;
+                */zsh) shell_name="zsh" ;;
+                *) 
+                    log_warn "Could not detect shell, defaulting to bash"
+                    shell_name="bash"
+                    ;;
+            esac
+        fi
+        log_info "Auto-detected shell: $shell_name"
+    fi
+    
+    # Determine shell configuration file based on shell type
+    case "$shell_name" in
+        bash)
+            shell_config_file="$HOME/.bash_profile"
+            ;;
+        zsh)
+            # Prefer .zshrc for zsh configuration
+            shell_config_file="$HOME/.zshrc"
+            ;;
+        *)
+            log_error "Unsupported shell for configuration: $shell_name"
+            return 1
+            ;;
+    esac
+    
     if [[ "${DRY_RUN:-}" == "true" ]]; then
-        log_info "[DRY RUN] Would add asdf configuration to shell RC file"
+        log_info "[DRY RUN] Would configure $shell_name shell"
+        log_info "[DRY RUN] Would add asdf configuration to $shell_config_file"
+        log_info "[DRY RUN] Would add asdf shims to PATH"
         return 0
     fi
     
-    local shell_rc=""
-    local shell_name=""
+    # Determine asdf source path based on installation method
+    local asdf_source=""
+    local asdf_completion=""
     
-    # Determine shell configuration file
-    if [[ -n "${BASH_VERSION:-}" ]]; then
-        shell_name="bash"
-        shell_rc="$HOME/.bashrc"
-    elif [[ -n "${ZSH_VERSION:-}" ]]; then
-        shell_name="zsh"
-        shell_rc="$HOME/.zshrc"
-    else
-        # Try to detect from SHELL environment variable
-        case "${SHELL:-}" in
-            */bash) shell_name="bash"; shell_rc="$HOME/.bashrc" ;;
-            */zsh) shell_name="zsh"; shell_rc="$HOME/.zshrc" ;;
-            *) 
-                log_warn "Could not detect shell, skipping shell integration"
+    case $OS in
+        macos)
+            # Homebrew installation paths
+            if [[ -f "/opt/homebrew/opt/asdf/libexec/asdf.sh" ]]; then
+                # Apple Silicon
+                asdf_source=". /opt/homebrew/opt/asdf/libexec/asdf.sh"
+                if [[ "$shell_name" == "bash" ]]; then
+                    asdf_completion=". /opt/homebrew/opt/asdf/etc/bash_completion.d/asdf.bash"
+                fi
+            elif [[ -f "/usr/local/opt/asdf/libexec/asdf.sh" ]]; then
+                # Intel
+                asdf_source=". /usr/local/opt/asdf/libexec/asdf.sh"
+                if [[ "$shell_name" == "bash" ]]; then
+                    asdf_completion=". /usr/local/opt/asdf/etc/bash_completion.d/asdf.bash"
+                fi
+            else
+                log_warn "Could not find Homebrew asdf installation for shell integration"
                 return 0
-                ;;
-        esac
-    fi
+            fi
+            ;;
+        debian-based|alpine)
+            # Git installation path (standard method for Linux)
+            asdf_source=". $ASDF_DIR/asdf.sh"
+            if [[ "$shell_name" == "bash" ]]; then
+                asdf_completion=". $ASDF_DIR/completions/asdf.bash"
+            fi
+            ;;
+    esac
     
-    log_info "Detected shell: $shell_name"
+    # Prepare configuration content
+    local config_header="# asdf configuration (added by init/scripts/prepare)"
+    local path_export='export PATH="${ASDF_DATA_DIR:-$HOME/.asdf}/shims:$PATH"'
     
-    # Add asdf to shell configuration
-    local asdf_config="# asdf configuration (added by init/scripts/prepare)"
-    local asdf_source=". $ASDF_DIR/asdf.sh"
-    
-    if [[ -f "$shell_rc" ]]; then
-        if ! grep -q "asdf.sh" "$shell_rc"; then
-            log_info "Adding asdf to $shell_rc"
-            echo "" >> "$shell_rc"
-            echo "$asdf_config" >> "$shell_rc"
-            echo "$asdf_source" >> "$shell_rc"
+    # Add configuration to shell file
+    if [[ -f "$shell_config_file" ]]; then
+        if ! grep -q "asdf" "$shell_config_file"; then
+            log_info "Adding asdf configuration to $shell_config_file"
+            echo "" >> "$shell_config_file"
+            echo "$config_header" >> "$shell_config_file"
+            echo "$path_export" >> "$shell_config_file"
+            echo "$asdf_source" >> "$shell_config_file"
             
             # Add completion for bash
-            if [[ "$shell_name" == "bash" ]]; then
-                echo ". $ASDF_DIR/completions/asdf.bash" >> "$shell_rc"
+            if [[ -n "$asdf_completion" ]]; then
+                echo "$asdf_completion" >> "$shell_config_file"
             fi
         else
-            log_info "asdf configuration already present in $shell_rc"
+            log_info "asdf configuration already present in $shell_config_file"
         fi
     else
-        log_info "Creating $shell_rc with asdf configuration"
-        echo "$asdf_config" > "$shell_rc"
-        echo "$asdf_source" >> "$shell_rc"
+        log_info "Creating $shell_config_file with asdf configuration"
+        echo "$config_header" > "$shell_config_file"
+        echo "$path_export" >> "$shell_config_file"
+        echo "$asdf_source" >> "$shell_config_file"
         
-        if [[ "$shell_name" == "bash" ]]; then
-            echo ". $ASDF_DIR/completions/asdf.bash" >> "$shell_rc"
+        if [[ -n "$asdf_completion" ]]; then
+            echo "$asdf_completion" >> "$shell_config_file"
         fi
     fi
     
-    log_success "Shell integration setup completed"
+    log_success "Shell integration setup completed for $shell_name"
+    log_info "Configuration added to: $shell_config_file"
 }
 
 # Verify environment is ready
@@ -543,8 +781,51 @@ verify_environment() {
 show_next_steps() {
     log_success "Bootstrap completed successfully!"
     echo
-    log_info "Next steps:"
-    echo "  1. Restart your shell or run: source ~/.bashrc (or ~/.zshrc)"
+    
+    # Check if asdf is accessible in current shell
+    if ! command -v asdf >/dev/null 2>&1 && [[ -n "$SELECTED_SHELL" ]]; then
+        local current_shell
+        current_shell=$(basename "$SHELL")
+        if [[ "$current_shell" != "$SELECTED_SHELL" ]]; then
+            log_warn "asdf is not accessible in your current shell ($current_shell)"
+            log_warn "This is expected since you configured $SELECTED_SHELL"
+        fi
+    fi
+    
+    # Provide different instructions based on shell selection
+    if [[ -n "$SELECTED_SHELL" ]]; then
+        local current_shell
+        current_shell=$(basename "$SHELL")
+        
+        if [[ "$current_shell" != "$SELECTED_SHELL" ]]; then
+            log_info "IMPORTANT: Shell configuration completed for $SELECTED_SHELL"
+            echo
+            log_warn "Your current shell ($current_shell) is different from the configured shell ($SELECTED_SHELL)."
+            log_warn "To access asdf and continue setup, you need to either:"
+            echo
+            echo "  Option A: Log out and log back in (recommended)"
+            echo "  Option B: Start a new $SELECTED_SHELL session:"
+            case "$SELECTED_SHELL" in
+                zsh) echo "    exec zsh" ;;
+                bash) echo "    exec bash" ;;
+            esac
+            echo
+            log_info "After switching to $SELECTED_SHELL, continue with:"
+        else
+            log_info "Shell configuration completed. To load the new configuration:"
+            echo "  1. source ~/.${SELECTED_SHELL}rc (or start a new shell session)"
+            echo
+            log_info "Then continue with:"
+        fi
+    else
+        log_info "Next steps:"
+        echo "  1. Restart your shell or source the configuration:"
+        echo "     source ~/.bash_profile  # for bash"
+        echo "     source ~/.zshrc         # for zsh"
+        echo
+        log_info "Then continue with:"
+    fi
+    
     echo "  2. cd $PROJECT_DIR"
     echo "  3. direnv allow"
     echo "  4. asdf install"
@@ -575,6 +856,20 @@ parse_args() {
                 log_info "Debug mode enabled"
                 shift
                 ;;
+            --shell=*)
+                SELECTED_SHELL="${1#*=}"
+                case "$SELECTED_SHELL" in
+                    bash|zsh)
+                        log_info "Selected shell: $SELECTED_SHELL"
+                        ;;
+                    *)
+                        log_error "Unsupported shell: $SELECTED_SHELL"
+                        log_error "Supported shells: bash, zsh"
+                        exit 1
+                        ;;
+                esac
+                shift
+                ;;
             *)
                 log_error "Unknown option: $1"
                 log_error "Use --help for usage information"
@@ -599,6 +894,12 @@ main() {
     detect_platform
     check_prerequisites
     echo
+    
+    # Install and configure shell if specified
+    if [[ -n "$SELECTED_SHELL" ]]; then
+        install_shell "$SELECTED_SHELL"
+        echo
+    fi
     
     # Install required tools
     install_git
