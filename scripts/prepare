@@ -31,8 +31,8 @@ OS Bootstrap Script (version $SCRIPT_VERSION)
 
 DESCRIPTION:
     This script prepares a minimal environment for OS initialization and configuration.
-    It installs git, asdf (via Homebrew on macOS, git clone on Linux), and homebrew (on macOS),
-    then clones the project repository.
+    It installs git, Python build dependencies, asdf (via Homebrew on macOS, binary download on Linux), 
+    direnv, and homebrew (on macOS), then clones the project repository.
 
 USAGE:
     $0 [OPTIONS]
@@ -114,7 +114,7 @@ cleanup_on_error() {
     
     # Remove partial asdf installation if it exists but is broken
     if [[ -d "$ASDF_DIR" ]] && ! command -v asdf >/dev/null 2>&1; then
-        log_warn "Removing partial asdf installation at $ASDF_DIR"
+        log_warn "Removing partial asdf data directory at $ASDF_DIR"
         rm -rf "$ASDF_DIR" || true
     fi
     
@@ -517,13 +517,10 @@ install_asdf() {
         log_info "asdf is already installed ($asdf_version)"
         
         # Source asdf if not already sourced (for plugin installation)
+        # Note: Binary installations don't need sourcing, only Homebrew installations do
         if [[ -z "${ASDF_DIR_WAS_SET:-}" ]]; then
-            # Try to source existing asdf installation
-            if [[ -f "$HOME/.asdf/asdf.sh" ]]; then
-                # shellcheck source=/dev/null
-                . "$HOME/.asdf/asdf.sh" 2>/dev/null || true
-                export ASDF_DIR_WAS_SET=1
-            elif [[ -f "/opt/homebrew/opt/asdf/libexec/asdf.sh" ]]; then
+            # Try to source existing asdf installation (Homebrew only)
+            if [[ -f "/opt/homebrew/opt/asdf/libexec/asdf.sh" ]]; then
                 # shellcheck source=/dev/null
                 . "/opt/homebrew/opt/asdf/libexec/asdf.sh" 2>/dev/null || true
                 export ASDF_DIR_WAS_SET=1
@@ -532,6 +529,8 @@ install_asdf() {
                 . "/usr/local/opt/asdf/libexec/asdf.sh" 2>/dev/null || true
                 export ASDF_DIR_WAS_SET=1
             fi
+            # For binary installations, no sourcing is needed
+            export ASDF_DIR_WAS_SET=1
         fi
         
         # Install plugins even if asdf is already installed
@@ -545,10 +544,10 @@ install_asdf() {
                 log_info "[DRY RUN] Would install asdf via Homebrew"
                 ;;
             debian-based|alpine)
-                log_info "[DRY RUN] Would install asdf via git clone to $ASDF_DIR"
+                log_info "[DRY RUN] Would install asdf via binary download to /usr/local/bin"
                 ;;
         esac
-        log_info "[DRY RUN] Would install asdf plugins: python, uv, direnv"
+        log_info "[DRY RUN] Would install asdf plugins: python, uv"
         return 0
     fi
     
@@ -577,8 +576,8 @@ install_asdf() {
             fi
             ;;
         debian-based|alpine)
-            log_info "Installing asdf via git clone (Linux)..."
-            install_asdf_from_git
+            log_info "Installing asdf via binary download (Linux)..."
+            install_asdf_from_binary
             return 0
             ;;
     esac
@@ -589,40 +588,94 @@ install_asdf() {
     verify_installation "asdf" "asdf version"
 }
 
-# Install asdf from git (fallback method)
-install_asdf_from_git() {
-    log_info "Installing asdf from git repository..."
+# Install asdf from binary distribution
+install_asdf_from_binary() {
+    log_info "Installing asdf from pre-compiled binary..."
     
-    # Remove existing asdf directory if it exists but is broken
-    if [[ -d "$ASDF_DIR" ]]; then
-        log_warn "Removing existing asdf directory (appears to be broken)"
-        rm -rf "$ASDF_DIR"
+    # Map architecture to binary naming convention
+    local binary_arch
+    case $ARCH in
+        x86_64) binary_arch="amd64" ;;
+        arm64) binary_arch="arm64" ;;
+        *) 
+            log_error "Unsupported architecture for binary installation: $ARCH"
+            exit 1
+            ;;
+    esac
+    
+    # Construct download URL
+    local binary_filename="asdf-${ASDF_VERSION}-linux-${binary_arch}.tar.gz"
+    local download_url="https://github.com/asdf-vm/asdf/releases/download/${ASDF_VERSION}/${binary_filename}"
+    
+    # Create temporary directory for download and extraction
+    local temp_dir=$(mktemp -d)
+    local temp_archive="$temp_dir/$binary_filename"
+    
+    log_info "Downloading asdf binary: $binary_filename"
+    log_debug "Download URL: $download_url"
+    log_debug "Temporary directory: $temp_dir"
+    
+    # Download the binary archive
+    if ! curl -L -o "$temp_archive" "$download_url"; then
+        log_error "Failed to download asdf binary from $download_url"
+        rm -rf "$temp_dir"
+        exit 1
     fi
     
-    # Clone asdf repository and checkout specific version
-    log_info "Cloning asdf repository..."
-    git clone --quiet https://github.com/asdf-vm/asdf.git "$ASDF_DIR"
+    # Extract the archive
+    log_info "Extracting asdf binary..."
+    if ! tar -xzf "$temp_archive" -C "$temp_dir"; then
+        log_error "Failed to extract asdf binary archive"
+        rm -rf "$temp_dir"
+        exit 1
+    fi
     
-    # Checkout the specific version (avoids detached HEAD warnings)
-    log_info "Checking out asdf version $ASDF_VERSION..."
-    cd "$ASDF_DIR"
-    git checkout --quiet "$ASDF_VERSION"
-    cd - >/dev/null
+    # Find the asdf binary in the extracted files
+    local asdf_binary
+    asdf_binary=$(find "$temp_dir" -name "asdf" -type f -executable)
+    if [[ -z "$asdf_binary" ]]; then
+        log_error "Could not find asdf binary in extracted archive"
+        rm -rf "$temp_dir"
+        exit 1
+    fi
     
-    # Add asdf to PATH for this script
-    export PATH="$ASDF_DIR/bin:$PATH"
+    log_debug "Found asdf binary at: $asdf_binary"
     
-    # Source asdf only if not already sourced (to avoid readonly variable error)
-    if [[ -z "${ASDF_DIR_WAS_SET:-}" ]]; then
-        # Source asdf.sh in a way that avoids readonly variable conflicts
-        # shellcheck source=/dev/null
-        if ! . "$ASDF_DIR/asdf.sh" 2>/dev/null; then
-            log_debug "Standard sourcing failed, likely due to readonly ASDF_DIR"
-            # Alternative: just ensure the functions are available via PATH
-            export PATH="$ASDF_DIR/bin:$ASDF_DIR/shims:$PATH"
+    # Copy the binary to /usr/local/bin (requires sudo on most systems)
+    log_info "Installing asdf binary to /usr/local/bin..."
+    if [[ $EUID -eq 0 ]]; then
+        # Running as root, can copy directly
+        cp "$asdf_binary" /usr/local/bin/asdf
+        chmod +x /usr/local/bin/asdf
+    else
+        # Need sudo to copy to /usr/local/bin
+        if command -v sudo >/dev/null 2>&1; then
+            sudo cp "$asdf_binary" /usr/local/bin/asdf
+            sudo chmod +x /usr/local/bin/asdf
+        else
+            log_error "Need sudo to install asdf to /usr/local/bin, but sudo is not available"
+            log_error "Please run this script as root or install sudo"
+            rm -rf "$temp_dir"
+            exit 1
         fi
-        export ASDF_DIR_WAS_SET=1
     fi
+    
+    # Clean up temporary files
+    rm -rf "$temp_dir"
+    
+    # Verify the installation
+    if ! command -v asdf >/dev/null 2>&1; then
+        log_error "asdf installation failed - binary not found in PATH"
+        exit 1
+    fi
+    
+    # Add /usr/local/bin to PATH for this script if not already there
+    if [[ ":$PATH:" != *":/usr/local/bin:"* ]]; then
+        export PATH="/usr/local/bin:$PATH"
+        log_debug "Added /usr/local/bin to PATH for this script"
+    fi
+    
+    log_success "asdf binary installed successfully"
     
     # Install required asdf plugins
     install_asdf_plugins
@@ -651,15 +704,134 @@ install_asdf_plugins() {
     else
         log_info "uv plugin already installed"
     fi
+}
+
+# Install Python build dependencies
+install_python_build_deps() {
+    log_info "Installing Python build dependencies..."
     
-    # Install direnv plugin
-    if ! asdf plugin list | grep -q "^direnv$"; then
-        log_info "Adding direnv plugin..."
-        asdf plugin add direnv
-        log_success "Added direnv plugin to asdf"
-    else
-        log_info "direnv plugin already installed"
+    if [[ "${DRY_RUN:-}" == "true" ]]; then
+        case $OS in
+            macos)
+                log_info "[DRY RUN] Would install Python build dependencies via Homebrew"
+                ;;
+            debian-based)
+                log_info "[DRY RUN] Would install Python build dependencies via apt"
+                ;;
+            alpine)
+                log_info "[DRY RUN] Would install Python build dependencies via apk"
+                ;;
+        esac
+        return 0
     fi
+    
+    # Install Python build dependencies using appropriate package manager
+    case $OS in
+        macos)
+            log_info "Installing Python build dependencies via Homebrew..."
+            # For macOS, Homebrew typically handles most dependencies automatically
+            # The key ones for Python compilation are openssl, readline, sqlite, xz, zlib
+            brew install openssl readline sqlite3 xz zlib
+            ;;
+        debian-based)
+            log_info "Installing Python build dependencies via apt..."
+            local packages=(
+                "libssl-dev"      # SSL/TLS support
+                "libbz2-dev"      # bzip2 compression
+                "liblzma-dev"     # LZMA compression
+                "libsqlite3-dev"  # SQLite database
+                "libreadline-dev" # readline support
+                "libncurses-dev"  # ncurses for terminal handling
+            )
+            
+            if [[ $EUID -eq 0 ]]; then
+                apt update && apt install -y "${packages[@]}"
+            else
+                sudo apt update && sudo apt install -y "${packages[@]}"
+            fi
+            ;;
+        alpine)
+            log_info "Installing Python build dependencies via apk..."
+            local packages=(
+                "openssl-dev"    # SSL/TLS support  
+                "bzip2-dev"      # bzip2 compression
+                "xz-dev"         # LZMA compression
+                "sqlite-dev"     # SQLite database
+                "readline-dev"   # readline support
+                "ncurses-dev"    # ncurses for terminal handling
+            )
+            
+            if [[ $EUID -eq 0 ]]; then
+                apk add --no-cache "${packages[@]}"
+            else
+                sudo apk add --no-cache "${packages[@]}"
+            fi
+            ;;
+        *)
+            log_error "Unsupported OS for Python build dependencies: $OS"
+            exit 1
+            ;;
+    esac
+    
+    log_success "Python build dependencies installed successfully"
+}
+
+# Install direnv via package managers
+install_direnv() {
+    log_info "Installing direnv..."
+    
+    # Check if direnv is already installed
+    if command -v direnv >/dev/null 2>&1; then
+        local direnv_version
+        direnv_version=$(direnv version 2>/dev/null || echo "unknown")
+        log_info "direnv is already installed ($direnv_version)"
+        return 0
+    fi
+    
+    if [[ "${DRY_RUN:-}" == "true" ]]; then
+        case $OS in
+            macos)
+                log_info "[DRY RUN] Would install direnv via Homebrew"
+                ;;
+            debian-based)
+                log_info "[DRY RUN] Would install direnv via apt"
+                ;;
+            alpine)
+                log_info "[DRY RUN] Would install direnv via apk"
+                ;;
+        esac
+        return 0
+    fi
+    
+    # Install direnv using appropriate package manager
+    case $OS in
+        macos)
+            log_info "Installing direnv via Homebrew..."
+            brew install direnv
+            ;;
+        debian-based)
+            log_info "Installing direnv via apt..."
+            if [[ $EUID -eq 0 ]]; then
+                apt update && apt install -y direnv
+            else
+                sudo apt update && sudo apt install -y direnv
+            fi
+            ;;
+        alpine)
+            log_info "Installing direnv via apk..."
+            if [[ $EUID -eq 0 ]]; then
+                apk add --no-cache direnv
+            else
+                sudo apk add --no-cache direnv
+            fi
+            ;;
+        *)
+            log_error "Unsupported OS for direnv installation: $OS"
+            exit 1
+            ;;
+    esac
+    
+    verify_installation "direnv" "direnv version"
 }
 
 # Install Homebrew (macOS only)
@@ -785,8 +957,9 @@ setup_shell_integration() {
     
     if [[ "${DRY_RUN:-}" == "true" ]]; then
         log_info "[DRY RUN] Would configure $shell_name shell"
-        log_info "[DRY RUN] Would add asdf configuration to $shell_config_file"
+        log_info "[DRY RUN] Would add development environment configuration to $shell_config_file"
         log_info "[DRY RUN] Would add asdf shims to PATH"
+        log_info "[DRY RUN] Would add direnv hook to shell"
         return 0
     fi
     
@@ -815,24 +988,36 @@ setup_shell_integration() {
             fi
             ;;
         debian-based|alpine)
-            # Git installation path (standard method for Linux)
-            asdf_source=". $ASDF_DIR/asdf.sh"
-            if [[ "$shell_name" == "bash" ]]; then
-                asdf_completion=". $ASDF_DIR/completions/asdf.bash"
-            fi
+            # Binary installation path (standard method for Linux)
+            asdf_source="# asdf binary installed to /usr/local/bin (no sourcing required)"
+            # Note: Binary installation doesn't include completion files
+            asdf_completion=""
             ;;
     esac
     
     # Prepare configuration content
-    local config_header="# asdf configuration (added by init/scripts/prepare)"
+    local config_header="# Development environment configuration (added by init/scripts/prepare)"
     local path_export='export PATH="${ASDF_DATA_DIR:-$HOME/.asdf}/shims:$PATH"'
+    local direnv_hook=""
+    
+    # Set up direnv hook based on shell
+    case "$shell_name" in
+        bash)
+            direnv_hook='eval "$(direnv hook bash)"'
+            ;;
+        zsh)
+            direnv_hook='eval "$(direnv hook zsh)"'
+            ;;
+    esac
     
     # Add configuration to shell file
     if [[ -f "$shell_config_file" ]]; then
-        if ! grep -q "asdf" "$shell_config_file"; then
-            log_info "Adding asdf configuration to $shell_config_file"
+        if ! grep -q "init/scripts/prepare" "$shell_config_file"; then
+            log_info "Adding development environment configuration to $shell_config_file"
             echo "" >> "$shell_config_file"
             echo "$config_header" >> "$shell_config_file"
+            echo "" >> "$shell_config_file"
+            echo "# asdf configuration" >> "$shell_config_file"
             echo "$path_export" >> "$shell_config_file"
             echo "$asdf_source" >> "$shell_config_file"
             
@@ -840,18 +1025,30 @@ setup_shell_integration() {
             if [[ -n "$asdf_completion" ]]; then
                 echo "$asdf_completion" >> "$shell_config_file"
             fi
+            
+            # Add direnv hook
+            echo "" >> "$shell_config_file"
+            echo "# direnv configuration" >> "$shell_config_file"
+            echo "$direnv_hook" >> "$shell_config_file"
         else
-            log_info "asdf configuration already present in $shell_config_file"
+            log_info "Development environment configuration already present in $shell_config_file"
         fi
     else
-        log_info "Creating $shell_config_file with asdf configuration"
+        log_info "Creating $shell_config_file with development environment configuration"
         echo "$config_header" > "$shell_config_file"
+        echo "" >> "$shell_config_file"
+        echo "# asdf configuration" >> "$shell_config_file"
         echo "$path_export" >> "$shell_config_file"
         echo "$asdf_source" >> "$shell_config_file"
         
         if [[ -n "$asdf_completion" ]]; then
             echo "$asdf_completion" >> "$shell_config_file"
         fi
+        
+        # Add direnv hook
+        echo "" >> "$shell_config_file"
+        echo "# direnv configuration" >> "$shell_config_file"
+        echo "$direnv_hook" >> "$shell_config_file"
     fi
     
     log_success "Shell integration setup completed for $shell_name"
@@ -868,7 +1065,7 @@ verify_environment() {
     fi
     
     # Check that all required tools are available
-    local tools=("git" "asdf")
+    local tools=("git" "asdf" "direnv")
     if [[ "$OS" == "macos" ]]; then
         tools+=("brew")
     fi
@@ -1049,7 +1246,13 @@ main() {
     install_git
     echo
     
+    install_python_build_deps
+    echo
+    
     install_asdf
+    echo
+    
+    install_direnv
     echo
     
     if [[ "$OS" == "macos" ]]; then
