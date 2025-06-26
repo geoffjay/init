@@ -42,7 +42,9 @@ OPTIONS:
     -v, --version       Show version information
     --dry-run           Show what would be done without making changes
     --debug             Enable debug output
-    --shell=SHELL       Select shell to install and configure (bash|zsh)
+    --shell=SHELL       Select shell to install, set as default, and configure (bash|zsh)
+                        If different from current shell, you'll be prompted to continue
+                        in the new shell or complete setup in the current shell
                         Default: auto-detect current shell
 
 ENVIRONMENT VARIABLES:
@@ -255,6 +257,32 @@ install_shell() {
     local target_shell="$1"
     log_info "Installing and configuring shell: $target_shell"
     
+    # Check what shell we're currently running in
+    local current_running_shell
+    # Try multiple methods to detect the current shell
+    if [[ -n "${ZSH_VERSION:-}" ]]; then
+        current_running_shell="zsh"
+    elif [[ -n "${BASH_VERSION:-}" ]]; then
+        current_running_shell="bash"
+    else
+        # Fall back to checking parent process
+        local parent_pid
+        parent_pid=$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')
+        if [[ -n "$parent_pid" ]]; then
+            current_running_shell=$(ps -p "$parent_pid" -o comm= 2>/dev/null | sed 's/^-//' || echo "unknown")
+        else
+            current_running_shell="unknown"
+        fi
+    fi
+    
+    # Check the system's default shell setting
+    local system_default_shell
+    system_default_shell=$(basename "$SHELL")
+    
+    log_debug "Currently running shell: $current_running_shell"
+    log_debug "Target shell: $target_shell"
+    log_debug "System default shell (SHELL env var): $system_default_shell"
+    
     # Check if shell is already installed
     if command -v "$target_shell" >/dev/null 2>&1; then
         local shell_version
@@ -299,14 +327,47 @@ install_shell() {
         fi
     fi
     
-    # Set as default shell if requested and different from current
-    local current_shell
-    current_shell=$(basename "$SHELL")
-    if [[ "$current_shell" != "$target_shell" ]]; then
-        if [[ "${DRY_RUN:-}" == "true" ]]; then
-            log_info "[DRY RUN] Would change default shell from $current_shell to $target_shell"
+    # Check if we're already running in the target shell
+    if [[ "$current_running_shell" == "$target_shell" ]]; then
+        log_info "Already running in $target_shell"
+        
+        # Still check if we need to set it as the system default
+        if [[ "$system_default_shell" != "$target_shell" ]]; then
+            if [[ "${DRY_RUN:-}" == "true" ]]; then
+                log_info "[DRY RUN] Would set $target_shell as system default shell"
+            else
+                log_info "Setting $target_shell as system default shell..."
+                local shell_path
+                shell_path=$(command -v "$target_shell")
+                
+                # Add shell to /etc/shells if not already present
+                if ! grep -q "^$shell_path$" /etc/shells 2>/dev/null; then
+                    log_info "Adding $shell_path to /etc/shells"
+                    echo "$shell_path" | sudo tee -a /etc/shells >/dev/null
+                fi
+                
+                # Change user's default shell
+                if command -v chsh >/dev/null 2>&1; then
+                    chsh -s "$shell_path"
+                    log_success "System default shell set to $target_shell"
+                    log_info "Note: The change will take effect for new login sessions"
+                else
+                    log_warn "chsh command not available - you may need to change your shell manually"
+                fi
+            fi
         else
-            log_info "Setting $target_shell as default shell..."
+            log_info "$target_shell is already the system default shell"
+        fi
+        return 0
+    fi
+    
+    # We need to switch to the target shell
+    if [[ "$system_default_shell" != "$target_shell" ]]; then
+        if [[ "${DRY_RUN:-}" == "true" ]]; then
+            log_info "[DRY RUN] Would change system default shell from $system_default_shell to $target_shell"
+            log_info "[DRY RUN] Would prompt user about continuing with shell switch"
+        else
+            log_info "Setting $target_shell as system default shell..."
             local shell_path
             shell_path=$(command -v "$target_shell")
             
@@ -319,14 +380,81 @@ install_shell() {
             # Change user's default shell
             if command -v chsh >/dev/null 2>&1; then
                 chsh -s "$shell_path"
-                log_success "Default shell changed to $target_shell"
-                log_info "Note: You may need to log out and back in for the change to take effect"
+                log_success "System default shell changed to $target_shell"
+                
+                # Ask user how they want to proceed
+                echo
+                log_warn "SHELL CHANGE DETECTED:"
+                log_warn "You've switched from $system_default_shell to $target_shell as your default shell."
+                log_warn "Currently running: $current_running_shell → switching to: $target_shell"
+                echo
+                echo "To continue the bootstrap process, you have two options:"
+                echo
+                echo "  Option A: Continue in the new shell (recommended)"
+                echo "            This will re-run the script using $target_shell"
+                echo
+                echo "  Option B: Complete bootstrap in current shell, then logout/login"
+                echo "            Configuration will be applied to $target_shell but you'll need"
+                echo "            to logout and login for it to take effect"
+                echo
+                echo -n "Which option would you prefer? [A/b]: "
+                read -r choice
+                choice=${choice:-A}
+                
+                case "$choice" in
+                    [Aa]*)
+                        log_info "Continuing bootstrap process in $target_shell..."
+                        echo
+                        # Re-execute the script with the same arguments in the new shell
+                        local script_args=()
+                        # Reconstruct the original arguments
+                        [[ "${DRY_RUN:-}" == "true" ]] && script_args+=("--dry-run")
+                        [[ "${DEBUG:-}" == "true" ]] && script_args+=("--debug")
+                        [[ -n "$SELECTED_SHELL" ]] && script_args+=("--shell=$SELECTED_SHELL")
+                        
+                        # Get the full path to the current script
+                        local script_path
+                        script_path=$(realpath "$0")
+                        
+                        log_info "Executing: exec $shell_path $script_path ${script_args[*]}"
+                        exec "$shell_path" "$script_path" "${script_args[@]}"
+                        ;;
+                    [Bb]*)
+                        log_info "Continuing bootstrap in current shell..."
+                        log_warn "Remember to logout and login after completion for shell change to take effect"
+                        echo
+                        ;;
+                    *)
+                        log_warn "Invalid choice, continuing in current shell..."
+                        echo
+                        ;;
+                esac
             else
                 log_warn "chsh command not available - you may need to change your shell manually"
             fi
         fi
     else
-        log_info "$target_shell is already the default shell"
+        # System default is already correct, just need to switch running shell
+        if [[ "${DRY_RUN:-}" == "true" ]]; then
+            log_info "[DRY RUN] Would switch from $current_running_shell to $target_shell"
+        else
+            log_info "Switching from $current_running_shell to $target_shell..."
+            local shell_path
+            shell_path=$(command -v "$target_shell")
+            
+            # Re-execute the script with the same arguments in the new shell
+            local script_args=()
+            [[ "${DRY_RUN:-}" == "true" ]] && script_args+=("--dry-run")
+            [[ "${DEBUG:-}" == "true" ]] && script_args+=("--debug")
+            [[ -n "$SELECTED_SHELL" ]] && script_args+=("--shell=$SELECTED_SHELL")
+            
+            # Get the full path to the current script
+            local script_path
+            script_path=$(realpath "$0")
+            
+            log_info "Executing: exec $shell_path $script_path ${script_args[*]}"
+            exec "$shell_path" "$script_path" "${script_args[@]}"
+        fi
     fi
 }
 
@@ -782,54 +910,70 @@ show_next_steps() {
     log_success "Bootstrap completed successfully!"
     echo
     
-    # Check if asdf is accessible in current shell
-    if ! command -v asdf >/dev/null 2>&1 && [[ -n "$SELECTED_SHELL" ]]; then
-        local current_shell
-        current_shell=$(basename "$SHELL")
-        if [[ "$current_shell" != "$SELECTED_SHELL" ]]; then
-            log_warn "asdf is not accessible in your current shell ($current_shell)"
-            log_warn "This is expected since you configured $SELECTED_SHELL"
-        fi
-    fi
+    # Check if we're running in the target shell after a potential switch
+    local current_shell default_shell
+    current_shell=$(ps -p $$ -o comm= | sed 's/^-//')
+    default_shell=$(basename "$SHELL")
     
-    # Provide different instructions based on shell selection
+    log_debug "Current running shell: $current_shell"
+    log_debug "Default shell: $default_shell"
+    log_debug "Selected shell: ${SELECTED_SHELL:-auto-detected}"
+    
+    # Provide different instructions based on shell situation
     if [[ -n "$SELECTED_SHELL" ]]; then
-        local current_shell
-        current_shell=$(basename "$SHELL")
-        
-        if [[ "$current_shell" != "$SELECTED_SHELL" ]]; then
-            log_info "IMPORTANT: Shell configuration completed for $SELECTED_SHELL"
+        if [[ "$current_shell" == "$SELECTED_SHELL" && "$default_shell" == "$SELECTED_SHELL" ]]; then
+            # Best case: we're running in the target shell and it's the default
+            log_info "✓ Shell configuration completed for $SELECTED_SHELL"
+            log_info "✓ Currently running in $SELECTED_SHELL"
+            log_info "✓ Default shell is set to $SELECTED_SHELL"
             echo
-            log_warn "Your current shell ($current_shell) is different from the configured shell ($SELECTED_SHELL)."
-            log_warn "To access asdf and continue setup, you need to either:"
+            log_info "Your environment is ready! To load the new configuration:"
+            echo "  source ~/.${SELECTED_SHELL}rc"
             echo
-            echo "  Option A: Log out and log back in (recommended)"
-            echo "  Option B: Start a new $SELECTED_SHELL session:"
-            case "$SELECTED_SHELL" in
-                zsh) echo "    exec zsh" ;;
-                bash) echo "    exec bash" ;;
-            esac
+        elif [[ "$current_shell" == "$SELECTED_SHELL" ]]; then
+            # We're in the target shell but it might not be the system default yet
+            log_info "✓ Shell configuration completed for $SELECTED_SHELL"
+            log_info "✓ Currently running in $SELECTED_SHELL"
             echo
-            log_info "After switching to $SELECTED_SHELL, continue with:"
+            log_info "Your environment is ready! To load the new configuration:"
+            echo "  source ~/.${SELECTED_SHELL}rc"
+            echo
+            if [[ "$default_shell" != "$SELECTED_SHELL" ]]; then
+                log_warn "Note: Your system default shell is still $default_shell"
+                log_warn "The change will take effect after logging out and back in"
+            fi
         else
-            log_info "Shell configuration completed. To load the new configuration:"
-            echo "  1. source ~/.${SELECTED_SHELL}rc (or start a new shell session)"
+            # We're not in the target shell - this shouldn't happen with the new logic but handle it
+            log_warn "Configuration completed for $SELECTED_SHELL, but currently running $current_shell"
             echo
-            log_info "Then continue with:"
+            log_info "To access your configured environment:"
+            echo "  1. Switch to $SELECTED_SHELL:"
+            case "$SELECTED_SHELL" in
+                zsh) echo "     exec zsh" ;;
+                bash) echo "     exec bash" ;;
+            esac
+            echo "  2. Load the configuration:"
+            echo "     source ~/.${SELECTED_SHELL}rc"
+            echo
         fi
     else
-        log_info "Next steps:"
-        echo "  1. Restart your shell or source the configuration:"
-        echo "     source ~/.bash_profile  # for bash"
-        echo "     source ~/.zshrc         # for zsh"
+        # No specific shell was selected
+        log_info "Shell configuration completed for your current shell"
         echo
-        log_info "Then continue with:"
+        log_info "To load the new configuration:"
+        if [[ "$current_shell" == "zsh" ]]; then
+            echo "  source ~/.zshrc"
+        else
+            echo "  source ~/.bash_profile"
+        fi
+        echo
     fi
     
-    echo "  2. cd $PROJECT_DIR"
-    echo "  3. direnv allow"
-    echo "  4. asdf install"
-    echo "  5. ansible-playbook -k playbook.yml"
+    log_info "Next steps to complete the setup:"
+    echo "  1. cd $PROJECT_DIR"
+    echo "  2. direnv allow"
+    echo "  3. asdf install"
+    echo "  4. ansible-playbook -k playbook.yml"
     echo
     log_info "The system is now ready for full configuration via Ansible!"
 }

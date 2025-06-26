@@ -136,13 +136,13 @@ init/
 # Preview what would be installed (dry run)
 ./scripts/prepare --dry-run
 
-# Install and configure zsh as the shell
+# Install, set as default, and configure zsh
 ./scripts/prepare --shell=zsh
-# Note: You'll need to switch to zsh after this completes
+# Note: If different from current shell, you'll be prompted to continue in zsh
 
-# Install and configure bash as the shell
+# Install, set as default, and configure bash  
 ./scripts/prepare --shell=bash
-# Note: You'll need to switch to bash after this completes
+# Note: If different from current shell, you'll be prompted to continue in bash
 
 # Enable debug output
 ./scripts/prepare --debug
@@ -150,6 +150,22 @@ init/
 # Show version information
 ./scripts/prepare --version
 ```
+
+### Shell Switching
+
+When you specify a shell that's different from your current shell, the script provides intelligent shell switching:
+
+1. **Detection**: Automatically detects if the requested shell differs from your current shell
+2. **Installation**: Installs the requested shell if not already present
+3. **Default Shell**: Uses `chsh` to set the new shell as your system default
+4. **User Choice**: Prompts you with two options:
+   - **Option A (Recommended)**: Continue the bootstrap process in the new shell
+   - **Option B**: Complete bootstrap in current shell, then logout/login
+
+**Option A** is recommended because:
+- Ensures all configuration is applied to the correct shell
+- Makes tools like `asdf` immediately accessible
+- Provides a seamless transition to your new shell environment
 
 ### Environment Variables
 
