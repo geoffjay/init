@@ -16,10 +16,16 @@ dependencies = [
 dev = [
     "ansible-lint>=6.0.0",
     "molecule>=6.0.0",
+    "pytest>=7.0.0",
+    "pre-commit>=3.0.0",
 ]
 
 [tool.uv]
 dev-dependencies = [
     "ansible-lint>=6.0.0",
     "molecule>=6.0.0",
+    "pytest>=7.0.0", 
+    "pre-commit>=3.0.0",
 ]
+
+
