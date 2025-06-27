@@ -1,7 +1,25 @@
 [project]
 name = "init"
-version = "0.1.0"
-description = "Add your description here"
+version = "1.0.0"
+description = "OS Initialization and Configuration"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "ansible>=8.0.0",
+    "ansible-core>=2.15.0",
+    "jinja2>=3.1.0",
+    "pyyaml>=6.0.0",
+    "paramiko>=3.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ansible-lint>=6.0.0",
+    "molecule>=6.0.0",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "ansible-lint>=6.0.0",
+    "molecule>=6.0.0",
+]
