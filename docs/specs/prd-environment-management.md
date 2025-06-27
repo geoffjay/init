@@ -45,7 +45,7 @@ The environment management system provides consistent, reproducible development 
   - Virtual environment created automatically
   - All Python dependencies isolated from system
   - Ansible runs within virtual environment
-  - Dependencies managed via requirements files
+  - Dependencies managed via uv.lock file
 
 #### FR-4: Environment Reproducibility
 - **Requirement**: Exact environment reproduction across machines
@@ -97,8 +97,6 @@ export PROJECT_ROOT=$PWD
 ```
 
 ### Requirements Management
-- `requirements.txt` - Core project dependencies
-- `requirements-dev.txt` - Development dependencies
 - `pyproject.toml` - Project configuration and dependencies
 
 ## Supported Platforms
