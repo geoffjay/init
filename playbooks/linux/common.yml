@@ -1,0 +1,137 @@
+---
+# Common Linux system configuration tasks
+- name: Display Linux distribution info
+  debug:
+    msg: "Configuring {{ ansible_distribution }} {{ ansible_distribution_version }} ({{ ansible_architecture }})"
+    
+- name: Set distribution-specific facts
+  set_fact:
+    is_apt_based: "{{ package_manager == 'apt' }}"
+    is_apk_based: "{{ package_manager == 'apk' }}"
+    is_debian_family: "{{ ansible_distribution in ['Ubuntu', 'Debian', 'Pop!_OS'] }}"
+    is_alpine: "{{ ansible_distribution == 'Alpine' }}"
+    
+- name: Create system directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /var/log/init-system
+    - /etc/init-system
+  become: yes
+  
+- name: Log system configuration start
+  copy:
+    dest: /var/log/init-system/configuration.log
+    content: |
+      System configuration started at {{ ansible_date_time.iso8601 }}
+      Distribution: {{ ansible_distribution }} {{ ansible_distribution_version }}
+      Architecture: {{ ansible_architecture }}
+      Package Manager: {{ package_manager }}
+    mode: '0644'
+  become: yes
+  
+# Include distribution-specific tasks
+- name: Include APT-based configuration
+  include_tasks: apt-based.yml
+  when: is_apt_based
+  
+- name: Include APK-based configuration
+  include_tasks: apk-based.yml
+  when: is_apk_based
+  
+- name: Configure system-wide environment
+  block:
+    - name: Set up global environment variables
+      lineinfile:
+        path: /etc/environment
+        line: "{{ item }}"
+        create: yes
+        mode: '0644'
+      loop:
+        - "EDITOR=vim"
+        - "PAGER=less"
+        - "TERM=xterm-256color"
+      become: yes
+      
+    - name: Configure default umask
+      lineinfile:
+        path: /etc/profile
+        line: "umask 022"
+        regexp: "^umask"
+      become: yes
+  rescue:
+    - name: Log environment configuration failure
+      debug:
+        msg: "Environment configuration failed: {{ ansible_failed_result.msg }}"
+        
+- name: Configure system limits
+  pam_limits:
+    domain: '*'
+    limit_type: "{{ item.type }}"
+    limit_item: "{{ item.item }}"
+    value: "{{ item.value }}"
+  loop:
+    - { type: 'soft', item: 'nofile', value: '65536' }
+    - { type: 'hard', item: 'nofile', value: '65536' }
+    - { type: 'soft', item: 'nproc', value: '32768' }
+    - { type: 'hard', item: 'nproc', value: '32768' }
+  become: yes
+  ignore_errors: yes
+  when: performance.enable_system_limits | default(true)
+  
+- name: Configure kernel parameters
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: yes
+  loop:
+    - { key: 'vm.swappiness', value: '10' }
+    - { key: 'fs.file-max', value: '2097152' }
+    - { key: 'net.core.rmem_max', value: '134217728' }
+    - { key: 'net.core.wmem_max', value: '134217728' }
+  become: yes
+  ignore_errors: yes
+  when: performance.enable_kernel_tuning | default(true)
+  
+- name: Configure logrotate for system logs
+  copy:
+    dest: /etc/logrotate.d/init-system
+    mode: '0644'
+    content: |
+      /var/log/init-system/*.log {
+          daily
+          missingok
+          rotate 7
+          compress
+          notifempty
+          create 644 root root
+      }
+  become: yes
+  when: performance.enable_logrotate | default(true)
+  
+- name: Verify essential commands are available
+  command: "which {{ item }}"
+  loop:
+    - git
+    - curl
+    - wget
+    - tar
+    - unzip
+  register: command_check
+  failed_when: false
+  changed_when: false
+  
+- name: Display missing commands
+  debug:
+    msg: "Warning: {{ item.item }} not found in PATH"
+  loop: "{{ command_check.results }}"
+  when: item.rc != 0
+  
+- name: Log system configuration completion
+  lineinfile:
+    path: /var/log/init-system/configuration.log
+    line: "Common Linux configuration completed at {{ ansible_date_time.iso8601 }}"
+  become: yes 

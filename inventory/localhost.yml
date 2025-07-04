@@ -1,0 +1,11 @@
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_host: 127.0.0.1
+  children:
+    control:
+      hosts:
+        localhost:
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}" 

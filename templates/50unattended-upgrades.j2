@@ -1,0 +1,120 @@
+// Unattended-Upgrade::Origins-Pattern controls which packages are
+// upgraded.
+Unattended-Upgrade::Origins-Pattern {
+        // Codename based matching:
+        // This will follow the migration of a release through different
+        // archives (e.g. from testing to stable and later oldstable).
+        "origin=Debian,codename=${distro_codename}-updates";
+        "origin=Debian,codename=${distro_codename}-proposed-updates";
+        "origin=Debian,codename=${distro_codename},label=Debian";
+        "origin=Debian,codename=${distro_codename},label=Debian-Security";
+        "origin=Debian,codename=${distro_codename}-security,label=Debian-Security";
+
+        // Archive or Suite based matching:
+        // Note that this will silently match a different release after
+        // migration to the specified archive (e.g. testing becomes the
+        // new stable).
+        "o=Debian,a=stable";
+        "o=Debian,a=stable-updates";
+        "o=Debian,a=stable-security";
+        "o=Debian,a=proposed-updates";
+
+        // Ubuntu lines
+        "origin=Ubuntu,archive=${distro_codename}-security,label=Ubuntu";
+        "o=Ubuntu,a=${distro_codename}";
+        "o=Ubuntu,a=${distro_codename}-updates";
+        "o=Ubuntu,a=${distro_codename}-security";
+        "o=Ubuntu,a=${distro_codename}-backports";
+};
+
+// Python regular expressions, matching packages to exclude from upgrading
+Unattended-Upgrade::Package-Blacklist {
+    // The following matches all packages, and includes the -dbg packages as well.
+    // ".*";
+
+    // Example: Exclude the kernel
+    // "linux-.*;
+    // "libc6-dev";
+    
+    // Exclude packages that might break system
+    "grub.*";
+    "linux-image.*";
+    "linux-headers.*";
+    "nvidia.*";
+};
+
+// This option allows to control if the development release of Ubuntu will be
+// upgraded automatically. Valid values are "true", "false", and "auto".
+Unattended-Upgrade::DevRelease "auto";
+
+// This option controls whether the automatic upgrades are enabled or not.
+{% if enable_security_updates %}
+Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+Unattended-Upgrade::MinimalSteps "true";
+Unattended-Upgrade::InstallOnShutdown "false";
+{% else %}
+Unattended-Upgrade::AutoFixInterruptedDpkg "false";
+Unattended-Upgrade::MinimalSteps "false";
+Unattended-Upgrade::InstallOnShutdown "false";
+{% endif %}
+
+// Send email to this address for problems or packages upgrades
+// If empty or unset then no email is sent, make sure that you
+// have a working mail setup on your system. A package that provides
+// 'mailx' must be installed. E.g. "user@example.com"
+//Unattended-Upgrade::Mail "";
+
+// Set this value to one of:
+//    "always", "only-on-error" or "on-change"
+// If this is not set, then any legacy MailOnlyOnError (boolean) value
+// is used to chose between "only-on-error" and "on-change"
+//Unattended-Upgrade::MailReport "on-change";
+
+// Remove unused automatically installed kernel-related packages
+// (kernel images, kernel headers and kernel version locked tools).
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+
+// Do automatic removal of newly unused dependencies after the upgrade
+Unattended-Upgrade::Remove-New-Unused-Dependencies "true";
+
+// Do automatic removal of unused packages after the upgrade
+// (equivalent to apt autoremove)
+Unattended-Upgrade::Remove-Unused-Dependencies "false";
+
+// Automatically reboot *WITHOUT CONFIRMATION* if
+//  the file /var/run/reboot-required is found after the upgrade
+Unattended-Upgrade::Automatic-Reboot "false";
+
+// Automatically reboot even if there are users currently logged in
+// when Unattended-Upgrade::Automatic-Reboot is set to true
+Unattended-Upgrade::Automatic-Reboot-WithUsers "false";
+
+// If automatic reboot is enabled and needed, reboot at the specific
+// time instead of immediately
+//  Default: "now"
+Unattended-Upgrade::Automatic-Reboot-Time "02:00";
+
+// Use apt bandwidth limit feature, this example limits the download
+// speed to 70kb/sec
+//Acquire::http::Dl-Limit "70";
+
+// Enable logging to syslog. Default is False
+Unattended-Upgrade::SyslogEnable "true";
+
+// Specify syslog facility. Default is daemon
+Unattended-Upgrade::SyslogFacility "daemon";
+
+// Download and install upgrades only on AC power
+// (i.e. skip or gracefully stop updates on battery)
+// Unattended-Upgrade::OnlyOnACPower "true";
+
+// Download and install upgrades only on non-metered connection
+// (i.e. skip or gracefully stop updates on a metered connection)
+// Unattended-Upgrade::Skip-Updates-On-Metered-Connections "true";
+
+// Verbose logging
+Unattended-Upgrade::Verbose "false";
+
+// Print debugging information both in unattended-upgrades and
+// in unattended-upgrade-shutdown
+Unattended-Upgrade::Debug "false"; 

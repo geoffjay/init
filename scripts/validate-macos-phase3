@@ -1,0 +1,286 @@
+#!/usr/bin/env bash
+
+# Phase 3 Validation: macOS Platform Implementation
+# This script validates the comprehensive macOS support implementation
+
+set -euo pipefail
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Counters
+TOTAL_TESTS=0
+PASSED_TESTS=0
+FAILED_TESTS=0
+
+# Helper functions
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[PASS]${NC} $1"
+    PASSED_TESTS=$((PASSED_TESTS + 1))
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[FAIL]${NC} $1"
+    FAILED_TESTS=$((FAILED_TESTS + 1))
+}
+
+run_test() {
+    local test_name="$1"
+    local test_command="$2"
+    
+    TOTAL_TESTS=$((TOTAL_TESTS + 1))
+    log_info "Running test: $test_name"
+    
+    if eval "$test_command" >/dev/null 2>&1; then
+        log_success "$test_name"
+        return 0
+    else
+        log_error "$test_name"
+        return 1
+    fi
+}
+
+# Validation functions
+validate_project_structure() {
+    log_info "Validating macOS project structure..."
+    
+    # Check if macOS playbook exists and has proper structure
+    run_test "macOS common playbook exists" "[ -f 'playbooks/macos/common.yml' ]"
+    
+    # Check if macOS group variables exist
+    run_test "macOS group variables exist" "[ -f 'inventory/group_vars/macos.yml' ]"
+    
+    # Validate main playbook includes macOS (checks for os_family variable usage)
+    run_test "Main playbook references macOS" "grep -q 'os_family' playbooks/main.yml"
+}
+
+validate_macos_variables() {
+    log_info "Validating macOS variable structure..."
+    
+    # Check for essential macOS variable sections
+    local macos_vars="inventory/group_vars/macos.yml"
+    
+    run_test "macOS packages defined" "grep -q 'macos_packages:' '$macos_vars'"
+    run_test "Homebrew configuration defined" "grep -q 'homebrew:' '$macos_vars'"
+    run_test "Development packages defined" "grep -q 'development_packages:' '$macos_vars'"
+    run_test "Cask packages defined" "grep -q 'cask_packages:' '$macos_vars'"
+    run_test "System preferences defined" "grep -q 'dock_preferences:' '$macos_vars'"
+    run_test "Security preferences defined" "grep -q 'security_preferences:' '$macos_vars'"
+    run_test "Network packages defined" "grep -q 'network_packages:' '$macos_vars'"
+    run_test "Shell packages defined" "grep -q 'shell_packages:' '$macos_vars'"
+    run_test "System packages defined" "grep -q 'system_packages:' '$macos_vars'"
+    run_test "macOS utilities defined" "grep -q 'macos_utilities:' '$macos_vars'"
+}
+
+validate_homebrew_integration() {
+    log_info "Validating Homebrew integration..."
+    
+    local macos_playbook="playbooks/macos/common.yml"
+    
+    # Check for Homebrew installation logic
+    run_test "Homebrew installation check" "grep -q 'Check if Homebrew is installed' '$macos_playbook'"
+    run_test "Homebrew installation task" "grep -q 'Install Homebrew if not present' '$macos_playbook'"
+    run_test "Homebrew update task" "grep -q 'Update Homebrew' '$macos_playbook'"
+    run_test "Homebrew analytics configuration" "grep -q 'Configure Homebrew analytics' '$macos_playbook'"
+    run_test "Homebrew PATH configuration" "grep -q 'Add Homebrew to PATH' '$macos_playbook'"
+    
+    # Check for package installation tasks
+    run_test "Core macOS packages installation" "grep -q 'Install core macOS packages' '$macos_playbook'"
+    run_test "Common packages installation" "grep -q 'Install common packages' '$macos_playbook'"
+    run_test "Development packages installation" "grep -q 'Install development packages' '$macos_playbook'"
+    run_test "Homebrew Cask applications" "grep -q 'Install Homebrew Cask applications' '$macos_playbook'"
+    
+    # Check for Homebrew cleanup
+    run_test "Homebrew cleanup task" "grep -q 'Cleanup Homebrew cache' '$macos_playbook'"
+}
+
+validate_xcode_integration() {
+    log_info "Validating Xcode tools integration..."
+    
+    local macos_playbook="playbooks/macos/common.yml"
+    
+    run_test "Xcode tools check" "grep -q 'Check if Xcode tools are installed' '$macos_playbook'"
+    run_test "Xcode tools installation" "grep -q 'Install Xcode command line tools' '$macos_playbook'"
+    run_test "Xcode tools wait task" "grep -q 'Wait for Xcode tools installation' '$macos_playbook'"
+}
+
+validate_system_preferences() {
+    log_info "Validating system preferences configuration..."
+    
+    local macos_playbook="playbooks/macos/common.yml"
+    
+    # Check for Dock configuration
+    run_test "Dock preferences configuration" "grep -q 'Configure Dock preferences' '$macos_playbook'"
+    run_test "Dock autohide setting" "grep -q 'Set Dock autohide' '$macos_playbook'"
+    run_test "Dock tile size setting" "grep -q 'Set Dock tile size' '$macos_playbook'"
+    run_test "Dock restart task" "grep -q 'Restart Dock' '$macos_playbook'"
+    
+    # Check for Finder configuration
+    run_test "Finder preferences configuration" "grep -q 'Configure Finder preferences' '$macos_playbook'"
+    run_test "Finder extensions setting" "grep -q 'Show all filename extensions' '$macos_playbook'"
+    run_test "Finder path bar setting" "grep -q 'Show path bar' '$macos_playbook'"
+    run_test "Finder restart task" "grep -q 'Restart Finder' '$macos_playbook'"
+    
+    # Check for security configuration
+    run_test "Security preferences configuration" "grep -q 'Configure security preferences' '$macos_playbook'"
+    run_test "Password requirement setting" "grep -q 'Require password immediately' '$macos_playbook'"
+    run_test "Firewall configuration" "grep -q 'Enable firewall' '$macos_playbook'"
+}
+
+validate_performance_optimizations() {
+    log_info "Validating performance optimizations..."
+    
+    local macos_playbook="playbooks/macos/common.yml"
+    
+    run_test "Performance optimizations section" "grep -q 'Configure performance optimizations' '$macos_playbook'"
+    run_test "Spotlight optimizations" "grep -q 'Disable Spotlight indexing' '$macos_playbook'"
+    run_test "Energy preferences configuration" "grep -q 'Set energy preferences' '$macos_playbook'"
+    run_test "Computer sleep setting" "grep -q 'Set computer sleep time' '$macos_playbook'"
+    run_test "Display sleep setting" "grep -q 'Set display sleep time' '$macos_playbook'"
+}
+
+validate_development_environment() {
+    log_info "Validating development environment setup..."
+    
+    local macos_playbook="playbooks/macos/common.yml"
+    
+    run_test "Development environment configuration" "grep -q 'Configure development environment' '$macos_playbook'"
+    run_test "Docker Desktop installation" "grep -q 'Install Docker Desktop' '$macos_playbook'"
+    run_test "Additional development tools" "grep -q 'Install additional development tools' '$macos_playbook'"
+}
+
+validate_architecture_support() {
+    log_info "Validating architecture support..."
+    
+    local macos_playbook="playbooks/macos/common.yml"
+    
+    run_test "Architecture detection" "grep -q 'Set macOS-specific facts' '$macos_playbook'"
+    run_test "Apple Silicon support" "grep -q 'is_apple_silicon' '$macos_playbook'"
+    run_test "Intel Mac support" "grep -q 'is_intel_mac' '$macos_playbook'"
+    run_test "Homebrew prefix logic" "grep -q 'homebrew_prefix' '$macos_playbook'"
+}
+
+validate_error_handling() {
+    log_info "Validating error handling and logging..."
+    
+    local macos_playbook="playbooks/macos/common.yml"
+    
+    # Check for error handling blocks
+    run_test "Block/rescue patterns" "grep -q 'rescue:' '$macos_playbook'"
+    run_test "Error logging" "grep -q 'Log.*failure' '$macos_playbook'"
+    run_test "Ignore errors where appropriate" "grep -q 'ignore_errors:' '$macos_playbook'"
+    
+    # Check for logging infrastructure
+    run_test "System directories creation" "grep -q 'Create system directories' '$macos_playbook'"
+    run_test "Configuration start logging" "grep -q 'Log macOS configuration start' '$macos_playbook'"
+    run_test "Configuration completion logging" "grep -q 'Log macOS configuration completion' '$macos_playbook'"
+}
+
+validate_yaml_syntax() {
+    log_info "Validating YAML syntax..."
+    
+    # Check macOS group variables syntax
+    if command -v python3 >/dev/null 2>&1; then
+        run_test "macOS group variables YAML syntax" "python3 -c 'import yaml; yaml.safe_load(open(\"inventory/group_vars/macos.yml\"))'"
+        run_test "macOS playbook YAML syntax" "python3 -c 'import yaml; yaml.safe_load(open(\"playbooks/macos/common.yml\"))'"
+    else
+        log_warning "Python3 not available, skipping YAML syntax validation"
+    fi
+}
+
+validate_package_categories() {
+    log_info "Validating package categorization..."
+    
+    local macos_vars="inventory/group_vars/macos.yml"
+    
+    # Check for comprehensive package categories
+    run_test "Core macOS packages" "grep -A 10 'macos_packages:' '$macos_vars' | grep -q 'gnu-sed'"
+    run_test "Development packages comprehensive" "grep -A 20 'development_packages:' '$macos_vars' | grep -q 'git'"
+    run_test "Network packages comprehensive" "grep -A 10 'network_packages:' '$macos_vars' | grep -q 'curl'"
+    run_test "System packages comprehensive" "grep -A 15 'system_packages:' '$macos_vars' | grep -q 'htop'"
+    run_test "Editor packages defined" "grep -A 8 'editor_packages:' '$macos_vars' | grep -q 'vim'"
+    run_test "macOS utilities comprehensive" "grep -A 8 'macos_utilities:' '$macos_vars' | grep -q 'mas'"
+    
+    # Check for Homebrew Cask packages
+    run_test "GUI applications via Cask" "grep -A 15 'cask_packages:' '$macos_vars' | grep -q 'visual-studio-code'"
+    run_test "Browser applications" "grep -A 15 'cask_packages:' '$macos_vars' | grep -q 'google-chrome'"
+    run_test "Development tools via Cask" "grep -A 15 'cask_packages:' '$macos_vars' | grep -q 'docker'"
+}
+
+validate_system_configuration_options() {
+    log_info "Validating system configuration options..."
+    
+    local macos_vars="inventory/group_vars/macos.yml"
+    
+    # Check configuration flags
+    run_test "System configuration flags" "grep -q 'configure_dock:' '$macos_vars'"
+    run_test "Performance configuration flags" "grep -q 'optimize_performance:' '$macos_vars'"
+    run_test "Security configuration flags" "grep -q 'configure_security:' '$macos_vars'"
+    run_test "Optional development flags" "grep -q 'install_docker_desktop:' '$macos_vars'"
+    
+    # Check preference structures
+    run_test "Dock preferences structure" "grep -A 5 'dock_preferences:' '$macos_vars' | grep -q 'autohide:'"
+    run_test "Finder preferences structure" "grep -A 5 'finder_preferences:' '$macos_vars' | grep -q 'show_all_filename_extensions:'"
+    run_test "Security preferences structure" "grep -A 5 'security_preferences:' '$macos_vars' | grep -q 'require_password_immediately:'"
+    run_test "Energy preferences structure" "grep -A 3 'energy_preferences:' '$macos_vars' | grep -q 'computer_sleep:'"
+}
+
+# Main validation execution
+main() {
+    log_info "Starting macOS Phase 3 validation..."
+    log_info "========================================="
+    
+    # Run all validation functions
+    validate_project_structure
+    validate_macos_variables
+    validate_homebrew_integration
+    validate_xcode_integration
+    validate_system_preferences
+    validate_performance_optimizations
+    validate_development_environment
+    validate_architecture_support
+    validate_error_handling
+    validate_yaml_syntax
+    validate_package_categories
+    validate_system_configuration_options
+    
+    # Summary
+    echo
+    log_info "========================================="
+    log_info "Validation Summary"
+    log_info "========================================="
+    log_info "Total tests: $TOTAL_TESTS"
+    log_success "Passed: $PASSED_TESTS"
+    
+    if [ $FAILED_TESTS -gt 0 ]; then
+        log_error "Failed: $FAILED_TESTS"
+        echo
+        log_error "Some validations failed. Please review the macOS implementation."
+        exit 1
+    else
+        echo
+        log_success "All macOS Phase 3 validations passed!"
+        log_info "macOS platform implementation is ready for testing."
+        exit 0
+    fi
+}
+
+# Check if running from the correct directory
+if [ ! -f "playbook.yml" ]; then
+    log_error "This script must be run from the project root directory"
+    exit 1
+fi
+
+main "$@" 

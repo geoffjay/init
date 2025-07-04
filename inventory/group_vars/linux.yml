@@ -1,0 +1,140 @@
+---
+# Linux-specific configuration
+package_manager: >-
+  {%- if ansible_distribution in ['Ubuntu', 'Debian', 'Pop!_OS'] -%}
+    apt
+  {%- elif ansible_distribution == 'Alpine' -%}
+    apk
+  {%- else -%}
+    unknown
+  {%- endif -%}
+
+# Additional Linux packages
+linux_packages:
+  apt:
+    - build-essential
+    - cmake
+    - software-properties-common
+    - apt-transport-https
+    - ca-certificates
+    - gnupg
+    - lsb-release
+    - net-tools
+    - htop
+    - tree
+    - rsync
+    - ssh-client
+  apk:
+    - alpine-sdk
+    - cmake
+    - ca-certificates
+    - openssl-dev
+    - linux-headers
+    - net-tools
+    - htop
+    - tree
+    - rsync
+    - openssh-client
+
+# System configuration
+system:
+  update_package_cache: true
+  install_security_updates: false  # Set to true to enable automatic security updates
+  configure_firewall: false
+  enable_edge_repos: false         # For Alpine: enable edge/testing repositories
+  use_fast_mirrors: false          # Use faster package mirrors
+  timezone: "UTC"                  # System timezone
+  
+# Performance tuning
+performance:
+  enable_system_limits: true       # Configure system limits for file descriptors and processes
+  enable_kernel_tuning: true       # Apply kernel parameter optimizations
+  enable_logrotate: true          # Configure log rotation
+
+# Shell-specific packages for Linux
+shell_packages:
+  apt:
+    - zsh
+    - zsh-autosuggestions
+    - zsh-syntax-highlighting
+    - bash-completion
+  apk:
+    - zsh
+    - zsh-autosuggestions
+    - zsh-syntax-highlighting
+    - bash-completion
+
+# Development packages
+development_packages:
+  apt:
+    - python3-dev
+    - python3-pip
+    - python3-venv
+    - nodejs
+    - npm
+    - golang-go
+    - rust-all
+    - docker.io
+    - docker-compose
+  apk:
+    - python3-dev
+    - py3-pip
+    - nodejs
+    - npm
+    - go
+    - rust
+    - docker
+    - docker-compose
+
+# Network and security tools
+network_packages:
+  apt:
+    - curl
+    - wget
+    - netcat-openbsd
+    - tcpdump
+    - nmap
+    - iptables
+    - ufw
+  apk:
+    - curl
+    - wget
+    - netcat-openbsd
+    - tcpdump
+    - nmap
+    - iptables
+    - ufw
+
+# Text editors and utilities
+editor_packages:
+  apt:
+    - vim
+    - nano
+    - emacs-nox
+    - micro
+  apk:
+    - vim
+    - nano
+    - emacs-nox
+    - micro
+
+# Monitoring and system tools
+system_packages:
+  apt:
+    - htop
+    - iotop
+    - iftop
+    - ncdu
+    - tree
+    - jq
+    - tmux
+    - screen
+  apk:
+    - htop
+    - iotop
+    - iftop
+    - ncdu
+    - tree
+    - jq
+    - tmux
+    - screen 

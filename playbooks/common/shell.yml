@@ -1,0 +1,351 @@
+---
+# Comprehensive shell configuration tasks
+- name: Display shell configuration info
+  debug:
+    msg: "Configuring {{ shell.default | default('zsh') }} shell with advanced features"
+
+- name: Create shell configuration directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ ansible_env.HOME }}/.zsh"
+    - "{{ ansible_env.HOME }}/.zsh/custom"
+    - "{{ ansible_env.HOME }}/.config"
+    - "{{ ansible_env.HOME }}/.local/state/zsh"
+    - "{{ ansible_env.HOME }}/logs/init-system"
+
+- name: Log shell configuration start
+  copy:
+    dest: "{{ ansible_env.HOME }}/logs/init-system/shell-configuration.log"
+    content: |
+      Shell configuration started at {{ ansible_date_time.iso8601 }}
+      Target shell: {{ shell.default | default('zsh') }}
+      Platform: {{ ansible_os_family }}
+      User: {{ ansible_user_id }}
+    mode: '0644'
+
+# Shell Installation and Setup
+- name: Check if target shell is installed
+  command: which {{ shell.default | default('zsh') }}
+  register: shell_path
+  failed_when: false
+  changed_when: false
+
+- name: Display shell installation status
+  debug:
+    msg: "{{ shell.default | default('zsh') }} is {{ 'installed' if shell_path.rc == 0 else 'not installed' }}"
+
+- name: Get current user shell
+  command: echo $SHELL
+  register: current_shell
+  changed_when: false
+
+- name: Set target shell as default user shell
+  user:
+    name: "{{ ansible_user_id }}"
+    shell: "{{ shell_path.stdout }}"
+  become: yes
+  when: 
+    - shell_path.rc == 0
+    - current_shell.stdout != shell_path.stdout
+    - shell.default | default('zsh') != 'bash'  # Don't change if staying with bash
+
+# Zsh Configuration Files
+- name: Generate comprehensive .zshrc
+  template:
+    src: zshrc-basic.j2
+    dest: "{{ ansible_env.HOME }}/.zshrc"
+    mode: '0644'
+    backup: yes
+  when: shell.default | default('zsh') == 'zsh'
+
+- name: Generate shell exports configuration
+  template:
+    src: zsh-exports.j2
+    dest: "{{ ansible_env.HOME }}/.zsh/exports.zsh"
+    mode: '0644'
+    backup: yes
+
+- name: Generate shell aliases configuration
+  template:
+    src: zsh-aliases.j2
+    dest: "{{ ansible_env.HOME }}/.zsh/aliases.zsh"
+    mode: '0644'
+    backup: yes
+
+- name: Generate shell functions configuration
+  template:
+    src: zsh-functions.j2
+    dest: "{{ ansible_env.HOME }}/.zsh/functions.zsh"
+    mode: '0644'
+    backup: yes
+
+# Advanced Shell Features
+- name: Install fzf if enabled
+  block:
+    - name: Check if fzf is available
+      command: which fzf
+      register: fzf_check
+      failed_when: false
+      changed_when: false
+      
+    - name: Install fzf via package manager
+      package:
+        name: fzf
+        state: present
+      become: yes
+      when: 
+        - fzf_check.rc != 0
+        - shell.enable_fzf_integration | default(true)
+      ignore_errors: yes
+      
+  when: shell.enable_fzf_integration | default(true)
+
+# Starship Prompt Configuration
+- name: Setup Starship prompt
+  block:
+    - name: Check if starship is available
+      command: which starship
+      register: starship_check
+      failed_when: false
+      changed_when: false
+      
+    - name: Generate Starship configuration
+      template:
+        src: starship.toml.j2
+        dest: "{{ ansible_env.HOME }}/.config/starship.toml"
+        mode: '0644'
+        backup: yes
+      when: starship_check.rc == 0
+      
+    - name: Create note about Starship installation
+      copy:
+        dest: "{{ ansible_env.HOME }}/.zsh/custom/starship-info.zsh"
+        content: |
+          # Starship prompt installation note
+          # To install Starship prompt, run:
+          # curl -sS https://starship.rs/install.sh | sh
+          # Then restart your shell or run: exec $SHELL
+        mode: '0644'
+      when: 
+        - starship_check.rc != 0
+        - shell.theme.use_starship | default(true)
+        
+  when: shell.theme.use_starship | default(true)
+
+# Shell Enhancement Integration
+- name: Create asdf integration file
+  copy:
+    dest: "{{ ansible_env.HOME }}/.zsh/custom/asdf-integration.zsh"
+    content: |
+      # asdf integration for shell configuration
+      if [[ -d "$HOME/.asdf" ]]; then
+          export ASDF_DIR="$HOME/.asdf"
+          export PATH="$ASDF_DIR/bin:$ASDF_DIR/shims:$PATH"
+          source "$ASDF_DIR/asdf.sh"
+          source "$ASDF_DIR/completions/asdf.bash" 2>/dev/null || true
+      {% if ansible_os_family == 'Darwin' %}
+      elif [[ -d "/opt/homebrew/opt/asdf" ]]; then
+          source "/opt/homebrew/opt/asdf/libexec/asdf.sh"
+          source "/opt/homebrew/opt/asdf/etc/bash_completion.d/asdf.bash" 2>/dev/null || true
+      elif [[ -d "/usr/local/opt/asdf" ]]; then
+          source "/usr/local/opt/asdf/libexec/asdf.sh"
+          source "/usr/local/opt/asdf/etc/bash_completion.d/asdf.bash" 2>/dev/null || true
+      {% endif %}
+      fi
+    mode: '0644'
+  when: shell.enable_asdf_completion | default(true)
+
+- name: Create direnv integration file
+  copy:
+    dest: "{{ ansible_env.HOME }}/.zsh/custom/direnv-integration.zsh"
+    content: |
+      # direnv integration for shell configuration
+      if command -v direnv >/dev/null 2>&1; then
+          eval "$(direnv hook zsh)"
+      fi
+    mode: '0644'
+  when: shell.enable_direnv_integration | default(true)
+
+# Development Tool Completions
+- name: Setup development tool completions
+  block:
+    - name: Create completion directory
+      file:
+        path: "{{ ansible_env.HOME }}/.zsh/completions"
+        state: directory
+        mode: '0755'
+        
+    - name: Create Docker completion integration
+      copy:
+        dest: "{{ ansible_env.HOME }}/.zsh/custom/docker-completion.zsh"
+        content: |
+          # Docker completion
+          if command -v docker >/dev/null 2>&1; then
+              if [[ ! -f ~/.zsh/completions/_docker ]]; then
+                  mkdir -p ~/.zsh/completions
+                  docker completion zsh > ~/.zsh/completions/_docker 2>/dev/null || true
+              fi
+              fpath=(~/.zsh/completions $fpath)
+          fi
+        mode: '0644'
+      when: shell.enable_docker_completion | default(true)
+      
+  when: shell.enable_docker_completion | default(true)
+
+# Git Integration
+- name: Setup Git integration
+  copy:
+    dest: "{{ ansible_env.HOME }}/.zsh/custom/git-integration.zsh"
+    content: |
+      # Git integration and enhancements
+      
+      # Git status in prompt (if not using starship)
+      if ! command -v starship >/dev/null 2>&1; then
+          autoload -Uz vcs_info
+          precmd() { vcs_info }
+          zstyle ':vcs_info:git:*' formats ' (%b)'
+          zstyle ':vcs_info:git:*' actionformats ' (%b|%a)'
+          setopt PROMPT_SUBST
+      fi
+      
+      # Git auto-completion
+      if [[ -f ~/.zsh/completions/_git ]] && ! command -v __git_complete >/dev/null 2>&1; then
+          source ~/.zsh/completions/_git
+      fi
+    mode: '0644'
+  when: shell.enable_git_integration | default(true)
+
+# Performance Optimizations
+- name: Create performance optimization file
+  copy:
+    dest: "{{ ansible_env.HOME }}/.zsh/custom/performance.zsh"
+    content: |
+      # Shell performance optimizations
+      
+      {% if shell.performance.optimize_startup_time | default(true) %}
+      # Skip global compinit for faster startup
+      skip_global_compinit=1
+      
+      # Lazy load expensive completions
+      zmodload zsh/complist
+      {% endif %}
+      
+      {% if shell.performance.lazy_load_completions | default(true) %}
+      # Lazy completion loading
+      autoload -Uz compinit
+      if [[ -n ${ZDOTDIR:-$HOME}/.zcompdump(#qN.mh+24) ]]; then
+        compinit
+      else
+        compinit -C
+      fi
+      {% endif %}
+      
+      # Optimize history operations
+      setopt HIST_FCNTL_LOCK
+      setopt HIST_REDUCE_BLANKS
+    mode: '0644'
+  when: shell.performance.optimize_startup_time | default(true)
+
+# Shell Customization Guide
+- name: Create customization guide
+  copy:
+    dest: "{{ ansible_env.HOME }}/.zsh/custom/README.md"
+    content: |
+      # Shell Customization Guide
+      
+      This directory contains custom shell configurations. Files here are automatically loaded by your shell.
+      
+      ## Adding Custom Configurations
+      
+      - Create `.zsh` files in this directory for custom configurations
+      - Files are loaded in alphabetical order
+      - Prefix with numbers to control load order (e.g., `01-custom.zsh`)
+      
+      ## Available Integrations
+      
+      - asdf: Version manager integration
+      - direnv: Directory environment management  
+      - Git: Enhanced git integration and completions
+      - Docker: Docker command completions
+      - Starship: Modern prompt (if installed)
+      
+      ## Performance Tips
+      
+      - Keep custom files small and focused
+      - Use conditional loading for heavy operations
+      - Profile startup time with: `time zsh -i -c exit`
+      
+      ## Generated Files
+      
+      The files in this directory are automatically generated. To make persistent changes:
+      1. Create your own files with different names
+      2. Override specific settings in separate files
+      3. Use the shell configuration variables in your Ansible setup
+    mode: '0644'
+
+# Shell Health Check
+- name: Create shell health check script
+  copy:
+    dest: "{{ ansible_env.HOME }}/.local/bin/shell-health-check"
+    content: |
+      #!/usr/bin/env bash
+      # Shell health check script
+      
+      echo "Shell Configuration Health Check"
+      echo "================================="
+      
+      # Check shell
+      echo "Current shell: $SHELL"
+      echo "Shell version: $($SHELL --version | head -1)"
+      
+      # Check configurations
+      echo ""
+      echo "Configuration Files:"
+      for file in ~/.zshrc ~/.zsh/{exports,aliases,functions}.zsh; do
+          if [[ -f "$file" ]]; then
+              echo "✓ $file ($(wc -l < "$file") lines)"
+          else
+              echo "✗ $file (missing)"
+          fi
+      done
+      
+      # Check integrations
+      echo ""
+      echo "Tool Integrations:"
+      for tool in asdf direnv starship fzf git; do
+          if command -v "$tool" >/dev/null 2>&1; then
+              echo "✓ $tool ($(command -v "$tool"))"
+          else
+              echo "✗ $tool (not found)"
+          fi
+      done
+      
+      # Performance test
+      echo ""
+      echo "Performance Test:"
+      echo "Shell startup time:"
+      time $SHELL -i -c exit
+    mode: '0755'
+
+# Completion Logging
+- name: Log shell configuration completion
+  lineinfile:
+    path: "{{ ansible_env.HOME }}/logs/init-system/shell-configuration.log"
+    line: "Shell configuration completed successfully at {{ ansible_date_time.iso8601 }}"
+
+- name: Display shell configuration summary
+  debug:
+    msg: |
+      Shell configuration completed successfully!
+      
+      Shell: {{ shell.default | default('zsh') }}
+      Configuration files created in ~/.zsh/
+      Custom configurations can be added to ~/.zsh/custom/
+      
+      To test your shell setup, run:
+      ~/.local/bin/shell-health-check
+      
+      Restart your shell or run 'exec $SHELL' to activate all changes. 

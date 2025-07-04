@@ -1,0 +1,185 @@
+---
+# macOS-specific configuration
+package_manager: brew
+
+# Core macOS packages for enhanced functionality
+macos_packages:
+  - gnu-sed
+  - gnu-tar
+  - coreutils
+  - findutils
+  - grep
+  - make
+  - cmake
+  - pkg-config
+  - openssl
+  - readline
+  - sqlite3
+  - xz
+  - zlib
+
+# Homebrew configuration
+homebrew:
+  update_homebrew: true
+  upgrade_all: false
+  install_cask_packages: true
+  cleanup_cache: true
+  enable_analytics: false
+
+# System configuration
+system:
+  install_xcode_tools: true
+  configure_dock: true
+  configure_finder: true
+  configure_terminal: true
+  configure_security: true
+  optimize_performance: true
+  timezone: "America/New_York"  # Default timezone, can be overridden
+
+# Performance tuning
+performance:
+  enable_spotlight_optimizations: true
+  configure_energy_settings: true
+  optimize_network_settings: true
+  disable_unnecessary_services: false
+
+# Shell packages for macOS
+shell_packages:
+  - zsh
+  - zsh-autosuggestions
+  - zsh-syntax-highlighting
+  - bash-completion
+  - fish
+  - starship
+
+# Development packages
+development_packages:
+  # Version control and build tools
+  - git
+  - git-lfs
+  - gh
+  - subversion
+  - mercurial
+  
+  # Programming languages and runtimes
+  - node
+  - python@3.11
+  - python@3.12
+  - go
+  - rust
+  - openjdk
+  - ruby
+  
+  # Build and development tools
+  - llvm
+  - gcc
+  - autoconf
+  - automake
+  - libtool
+  - pkg-config
+  
+  # Databases
+  - postgresql
+  - mysql
+  - redis
+  - sqlite
+
+# Homebrew Cask applications (GUI applications)
+cask_packages:
+  # Development tools
+  - visual-studio-code
+  - iterm2
+  - docker
+  - postman
+  
+  # Productivity
+  - alfred
+  - rectangle
+  - cleanmymac
+  
+  # Browsers
+  - google-chrome
+  - firefox
+  
+  # Media and utilities
+  - vlc
+  - the-unarchiver
+  - appcleaner
+
+# Network and security tools
+network_packages:
+  - curl
+  - wget
+  - httpie
+  - nmap
+  - wireshark
+  - netcat
+  - socat
+  - tcpdump
+
+# Text editors and utilities  
+editor_packages:
+  - vim
+  - neovim
+  - nano
+  - emacs
+  - micro
+  - code-server
+
+# System monitoring and utilities
+system_packages:
+  - htop
+  - btop
+  - iftop
+  - ncdu
+  - tree
+  - jq
+  - yq
+  - fx
+  - tmux
+  - screen
+  - watch
+  - parallel
+
+# macOS-specific utilities
+macos_utilities:
+  - mas  # Mac App Store command line
+  - dockutil  # Dock configuration
+  - defaultbrowser  # Default browser management
+  - switchaudio-osx  # Audio device switching
+  - trash  # Better rm command
+  - quick-look-plugins
+
+# Optional development environments
+optional_development:
+  install_docker_desktop: true
+  install_kubernetes_tools: false
+  install_terraform: false
+  install_aws_cli: false
+  install_gcloud_sdk: false
+
+# macOS system preferences
+dock_preferences:
+  autohide: true
+  magnification: false
+  tile_size: 48
+  minimize_effect: "scale"
+  show_recent_apps: false
+
+finder_preferences:
+  show_all_filename_extensions: true
+  show_hidden_files: false
+  default_view: "list"
+  show_path_bar: true
+  show_status_bar: true
+
+security_preferences:
+  require_password_immediately: true
+  disable_guest_account: true
+  enable_firewall: true
+  disable_remote_login: false
+
+energy_preferences:
+  computer_sleep: 30  # minutes
+  display_sleep: 15   # minutes
+  prevent_computer_sleep_on_power_adapter: true 

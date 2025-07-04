@@ -1,0 +1,99 @@
+---
+# Project configuration
+project:
+  name: "init"
+  version: "1.0.0"
+  root: "{{ ansible_env.HOME }}/Projects/init"
+
+# Common packages across all platforms
+common_packages:
+  - git
+  - curl
+  - wget
+  - neovim
+  - unzip
+  - tar
+
+# Shell configuration
+shell:
+  # Basic shell settings
+  default: zsh
+  install_oh_my_zsh: false
+  enable_syntax_highlighting: true
+  enable_autosuggestions: true
+  
+  # Advanced shell features
+  enable_starship_prompt: true
+  enable_fzf_integration: true
+  enable_git_integration: true
+  enable_docker_completion: true
+  enable_asdf_completion: true
+  enable_direnv_integration: true
+  
+  # Performance optimization
+  optimize_startup_time: true
+  lazy_load_completions: true
+  minimal_prompt_delay: true
+  
+  # History configuration
+  history:
+    size: 50000
+    save_size: 50000
+    share_across_sessions: true
+    ignore_duplicates: true
+    ignore_space_commands: true
+    verify_before_execution: true
+    
+  # Completion settings
+  completion:
+    case_insensitive: true
+    substring_matching: true
+    auto_menu: true
+    show_descriptions: true
+    group_matches: true
+    
+  # Key bindings
+  key_bindings:
+    vim_mode: false
+    emacs_mode: true
+    
+  # Custom aliases
+  aliases:
+    enable_common_aliases: true
+    enable_git_aliases: true
+    enable_docker_aliases: false
+    enable_k8s_aliases: false
+    enable_platform_aliases: true
+    
+  # Functions and utilities
+  functions:
+    enable_common_functions: true
+    enable_development_functions: true
+    enable_navigation_functions: true
+    
+  # Shell theme and appearance
+  theme:
+    use_starship: true
+    enable_colors: true
+    show_git_status: true
+    show_exit_code: true
+    show_execution_time: true
+    show_current_directory: true
+  
+# Development tools
+development:
+  install_vim_plugins: true
+  configure_git: true
+  install_docker_completion: false
+  
+# Python environment
+python:
+  version: "3.13.5"
+  create_virtual_env: true
+  install_development_tools: true
+  
+# Performance settings
+performance:
+  parallel_downloads: 4
+  cache_downloads: true
+  optimize_shell_startup: true 

@@ -13,3 +13,10 @@ You can now:
   - Week 3: Integration and Testing
   - Week 4: Documentation and Release
 - Start implementation - Each plan has specific tasks with clear deliverables and testing criteria
+
+## Packages
+
+These are all packages that I installed manually because I was too impatient to do it all in playbooks. They should eventually be installed using the playbooks.
+
+- docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+- cockpit, cockpit-podman, cockpit-networkmanager

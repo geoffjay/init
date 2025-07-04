@@ -1,0 +1,336 @@
+---
+# macOS system configuration tasks
+- name: Display macOS info
+  debug:
+    msg: "Configuring macOS {{ ansible_distribution_version }} ({{ ansible_architecture }})"
+    
+- name: Set macOS-specific facts
+  set_fact:
+    is_apple_silicon: "{{ ansible_architecture == 'arm64' }}"
+    is_intel_mac: "{{ ansible_architecture == 'x86_64' }}"
+    homebrew_prefix: "{{ '/opt/homebrew' if ansible_architecture == 'arm64' else '/usr/local' }}"
+
+- name: Create system directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ ansible_env.HOME }}/logs/init-system"
+    - "{{ ansible_env.HOME }}/.config/init-system"
+
+- name: Log macOS configuration start
+  copy:
+    dest: "{{ ansible_env.HOME }}/logs/init-system/macos-configuration.log"
+    content: |
+      macOS configuration started at {{ ansible_date_time.iso8601 }}
+      Version: macOS {{ ansible_distribution_version }}
+      Architecture: {{ ansible_architecture }}
+      Homebrew prefix: {{ homebrew_prefix }}
+      User: {{ ansible_user_id }}
+    mode: '0644'
+
+# Homebrew Installation and Configuration
+- name: Check if Homebrew is installed
+  stat:
+    path: "{{ homebrew_prefix }}/bin/brew"
+  register: homebrew_installed
+
+- name: Install Homebrew if not present
+  shell: |
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  when: not homebrew_installed.stat.exists
+  environment:
+    NONINTERACTIVE: "1"
+
+- name: Add Homebrew to PATH for current session
+  lineinfile:
+    path: "{{ ansible_env.HOME }}/.zshrc"
+    line: 'eval "$({{ homebrew_prefix }}/bin/brew shellenv)"'
+    create: yes
+    backup: yes
+
+- name: Update Homebrew
+  homebrew:
+    update_homebrew: "{{ homebrew.update_homebrew | default(true) }}"
+  environment:
+    PATH: "{{ homebrew_prefix }}/bin:{{ ansible_env.PATH }}"
+
+- name: Configure Homebrew analytics
+  command: "{{ homebrew_prefix }}/bin/brew analytics {{ 'off' if not homebrew.enable_analytics | default(false) else 'on' }}"
+  environment:
+    PATH: "{{ homebrew_prefix }}/bin:{{ ansible_env.PATH }}"
+  changed_when: false
+
+# Xcode Command Line Tools
+- name: Install Xcode command line tools
+  block:
+    - name: Check if Xcode tools are installed
+      command: xcode-select -p
+      register: xcode_check
+      failed_when: false
+      changed_when: false
+      
+    - name: Install Xcode command line tools
+      command: xcode-select --install
+      when: xcode_check.rc != 0
+      register: xcode_install
+      failed_when: false
+      
+    - name: Wait for Xcode tools installation to complete
+      wait_for:
+        path: /Library/Developer/CommandLineTools/usr/bin/git
+        timeout: 600
+      when: xcode_install.changed
+  when: system.install_xcode_tools | default(true)
+  rescue:
+    - name: Log Xcode installation issue
+      debug:
+        msg: "Xcode command line tools installation may require manual completion"
+
+# Package Installation
+- name: Install core macOS packages
+  homebrew:
+    name: "{{ macos_packages }}"
+    state: present
+  environment:
+    PATH: "{{ homebrew_prefix }}/bin:{{ ansible_env.PATH }}"
+
+- name: Install common packages
+  homebrew:
+    name: "{{ common_packages }}"
+    state: present
+  environment:
+    PATH: "{{ homebrew_prefix }}/bin:{{ ansible_env.PATH }}"
+
+- name: Install shell packages
+  homebrew:
+    name: "{{ shell_packages | default([]) }}"
+    state: present
+  environment:
+    PATH: "{{ homebrew_prefix }}/bin:{{ ansible_env.PATH }}"
+  when: shell_packages is defined
+
+- name: Install development packages
+  homebrew:
+    name: "{{ development_packages | default([]) }}"
+    state: present
+  environment:
+    PATH: "{{ homebrew_prefix }}/bin:{{ ansible_env.PATH }}"
+  when: development_packages is defined and development.install_development_tools | default(true)
+
+- name: Install network packages
+  homebrew:
+    name: "{{ network_packages | default([]) }}"
+    state: present
+  environment:
+    PATH: "{{ homebrew_prefix }}/bin:{{ ansible_env.PATH }}"
+  when: network_packages is defined
+
+- name: Install system monitoring packages
+  homebrew:
+    name: "{{ system_packages | default([]) }}"
+    state: present
+  environment:
+    PATH: "{{ homebrew_prefix }}/bin:{{ ansible_env.PATH }}"
+  when: system_packages is defined
+
+- name: Install macOS utilities
+  homebrew:
+    name: "{{ macos_utilities | default([]) }}"
+    state: present
+  environment:
+    PATH: "{{ homebrew_prefix }}/bin:{{ ansible_env.PATH }}"
+  when: macos_utilities is defined
+
+# Homebrew Cask Applications
+- name: Install Homebrew Cask applications
+  homebrew_cask:
+    name: "{{ cask_packages | default([]) }}"
+    state: present
+  environment:
+    PATH: "{{ homebrew_prefix }}/bin:{{ ansible_env.PATH }}"
+  when: 
+    - homebrew.install_cask_packages | default(true)
+    - cask_packages is defined
+  ignore_errors: yes  # Some casks may require manual intervention
+
+# System Preferences Configuration
+- name: Configure Dock preferences
+  block:
+    - name: Set Dock autohide
+      osx_defaults:
+        domain: com.apple.dock
+        key: autohide
+        type: bool
+        value: "{{ dock_preferences.autohide | default(true) }}"
+        
+    - name: Set Dock tile size
+      osx_defaults:
+        domain: com.apple.dock
+        key: tilesize
+        type: int
+        value: "{{ dock_preferences.tile_size | default(48) }}"
+        
+    - name: Set Dock minimize effect
+      osx_defaults:
+        domain: com.apple.dock
+        key: mineffect
+        type: string
+        value: "{{ dock_preferences.minimize_effect | default('scale') }}"
+        
+    - name: Hide recent applications in Dock
+      osx_defaults:
+        domain: com.apple.dock
+        key: show-recents
+        type: bool
+        value: "{{ dock_preferences.show_recent_apps | default(false) }}"
+        
+    - name: Restart Dock to apply changes
+      command: killall Dock
+      ignore_errors: yes
+  when: system.configure_dock | default(true)
+  rescue:
+    - name: Log Dock configuration failure
+      debug:
+        msg: "Dock configuration failed: {{ ansible_failed_result.msg }}"
+
+- name: Configure Finder preferences  
+  block:
+    - name: Show all filename extensions in Finder
+      osx_defaults:
+        domain: NSGlobalDomain
+        key: AppleShowAllExtensions
+        type: bool
+        value: "{{ finder_preferences.show_all_filename_extensions | default(true) }}"
+        
+    - name: Show path bar in Finder
+      osx_defaults:
+        domain: com.apple.finder
+        key: ShowPathbar
+        type: bool
+        value: "{{ finder_preferences.show_path_bar | default(true) }}"
+        
+    - name: Show status bar in Finder
+      osx_defaults:
+        domain: com.apple.finder
+        key: ShowStatusBar
+        type: bool
+        value: "{{ finder_preferences.show_status_bar | default(true) }}"
+        
+    - name: Set default Finder view
+      osx_defaults:
+        domain: com.apple.finder
+        key: FXPreferredViewStyle
+        type: string
+        value: "{{ 'Nlsv' if finder_preferences.default_view == 'list' else 'icnv' }}"
+        
+    - name: Restart Finder to apply changes
+      command: killall Finder
+      ignore_errors: yes
+  when: system.configure_finder | default(true)
+  rescue:
+    - name: Log Finder configuration failure
+      debug:
+        msg: "Finder configuration failed: {{ ansible_failed_result.msg }}"
+
+- name: Configure security preferences
+  block:
+    - name: Require password immediately after sleep or screen saver
+      osx_defaults:
+        domain: com.apple.screensaver
+        key: askForPassword
+        type: int
+        value: 1
+      when: security_preferences.require_password_immediately | default(true)
+      
+    - name: Set password delay to 0 seconds
+      osx_defaults:
+        domain: com.apple.screensaver
+        key: askForPasswordDelay
+        type: int
+        value: 0
+      when: security_preferences.require_password_immediately | default(true)
+      
+    - name: Enable firewall
+      command: sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on
+      become: yes
+      when: security_preferences.enable_firewall | default(true)
+      ignore_errors: yes
+  when: system.configure_security | default(true)
+  rescue:
+    - name: Log security configuration failure
+      debug:
+        msg: "Security configuration failed: {{ ansible_failed_result.msg }}"
+
+# Performance Optimizations
+- name: Configure performance optimizations
+  block:
+    - name: Disable Spotlight indexing on external volumes
+      command: sudo mdutil -i off /Volumes/* 2>/dev/null || true
+      become: yes
+      when: performance.enable_spotlight_optimizations | default(true)
+      ignore_errors: yes
+      
+    - name: Set energy preferences for better performance
+      block:
+        - name: Set computer sleep time
+          command: sudo pmset -c sleep {{ energy_preferences.computer_sleep | default(30) }}
+          become: yes
+          
+        - name: Set display sleep time  
+          command: sudo pmset -c displaysleep {{ energy_preferences.display_sleep | default(15) }}
+          become: yes
+          
+        - name: Prevent computer sleep when on power adapter
+          command: sudo pmset -c sleep 0
+          become: yes
+          when: energy_preferences.prevent_computer_sleep_on_power_adapter | default(true)
+      when: performance.configure_energy_settings | default(true)
+      ignore_errors: yes
+  when: system.optimize_performance | default(true)
+  rescue:
+    - name: Log performance optimization failure
+      debug:
+        msg: "Performance optimization failed: {{ ansible_failed_result.msg }}"
+
+# Development Environment Setup
+- name: Configure development environment
+  block:
+    - name: Install Docker Desktop
+      homebrew_cask:
+        name: docker
+        state: present
+      environment:
+        PATH: "{{ homebrew_prefix }}/bin:{{ ansible_env.PATH }}"
+      when: optional_development.install_docker_desktop | default(true)
+      ignore_errors: yes
+      
+    - name: Install additional development tools
+      homebrew:
+        name: "{{ item }}"
+        state: present
+      environment:
+        PATH: "{{ homebrew_prefix }}/bin:{{ ansible_env.PATH }}"
+      loop:
+        - terraform
+        - awscli
+      when: optional_development.install_terraform | default(false) or optional_development.install_aws_cli | default(false)
+      ignore_errors: yes
+  rescue:
+    - name: Log development environment setup failure
+      debug:
+        msg: "Development environment setup failed: {{ ansible_failed_result.msg }}"
+
+# Cleanup and Maintenance
+- name: Cleanup Homebrew cache
+  command: "{{ homebrew_prefix }}/bin/brew cleanup"
+  environment:
+    PATH: "{{ homebrew_prefix }}/bin:{{ ansible_env.PATH }}"
+  when: homebrew.cleanup_cache | default(true)
+  ignore_errors: yes
+
+- name: Log macOS configuration completion
+  lineinfile:
+    path: "{{ ansible_env.HOME }}/logs/init-system/macos-configuration.log"
+    line: "macOS configuration completed successfully at {{ ansible_date_time.iso8601 }}" 

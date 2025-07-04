@@ -1,0 +1,299 @@
+#!/usr/bin/env bash
+
+# Phase 4 Validation: Shell Configuration Implementation
+# This script validates the comprehensive shell configuration system
+
+set -euo pipefail
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Counters
+TOTAL_TESTS=0
+PASSED_TESTS=0
+FAILED_TESTS=0
+
+# Helper functions
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[PASS]${NC} $1"
+    PASSED_TESTS=$((PASSED_TESTS + 1))
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[FAIL]${NC} $1"
+    FAILED_TESTS=$((FAILED_TESTS + 1))
+}
+
+run_test() {
+    local test_name="$1"
+    local test_command="$2"
+    
+    TOTAL_TESTS=$((TOTAL_TESTS + 1))
+    log_info "Running test: $test_name"
+    
+    if eval "$test_command" >/dev/null 2>&1; then
+        log_success "$test_name"
+        return 0
+    else
+        log_error "$test_name"
+        return 1
+    fi
+}
+
+# Validation functions
+validate_shell_configuration_variables() {
+    log_info "Validating shell configuration variables..."
+    
+    local shell_vars="inventory/group_vars/all.yml"
+    
+    # Check for enhanced shell variables
+    run_test "Shell configuration structure" "grep -q 'shell:' '$shell_vars'"
+    run_test "Shell history configuration" "grep -q 'history:' '$shell_vars'"
+    run_test "Shell completion settings" "grep -q 'completion:' '$shell_vars'"
+    run_test "Shell aliases configuration" "grep -q 'aliases:' '$shell_vars'"
+    run_test "Shell functions configuration" "grep -q 'functions:' '$shell_vars'"
+    run_test "Shell theme configuration" "grep -q 'theme:' '$shell_vars'"
+    run_test "Shell performance settings" "grep -q 'optimize_startup_time:' '$shell_vars'"
+    run_test "Shell key bindings" "grep -q 'key_bindings:' '$shell_vars'"
+    run_test "Advanced shell features" "grep -q 'enable_starship_prompt:' '$shell_vars'"
+    run_test "Shell integrations" "grep -q 'enable_fzf_integration:' '$shell_vars'"
+}
+
+validate_shell_playbook_structure() {
+    log_info "Validating shell playbook structure..."
+    
+    local shell_playbook="playbooks/common/shell.yml"
+    
+    # Check basic structure
+    run_test "Shell playbook exists" "[ -f '$shell_playbook' ]"
+    run_test "Shell configuration info task" "grep -q 'Display shell configuration info' '$shell_playbook'"
+    run_test "Shell directories creation" "grep -q 'Create shell configuration directories' '$shell_playbook'"
+    run_test "Shell logging setup" "grep -q 'Log shell configuration start' '$shell_playbook'"
+    
+    # Check shell setup tasks
+    run_test "Shell installation check" "grep -q 'Check if target shell is installed' '$shell_playbook'"
+    run_test "Current shell detection" "grep -q 'Get current user shell' '$shell_playbook'"
+    run_test "Default shell setting" "grep -q 'Set target shell as default user shell' '$shell_playbook'"
+}
+
+validate_template_files() {
+    log_info "Validating shell template files..."
+    
+    # Check template files exist
+    run_test "Basic zshrc template exists" "[ -f 'templates/zshrc-basic.j2' ]"
+    run_test "Shell aliases template exists" "[ -f 'templates/zsh-aliases.j2' ]"
+    run_test "Shell exports template exists" "[ -f 'templates/zsh-exports.j2' ]"
+    run_test "Shell functions template exists" "[ -f 'templates/zsh-functions.j2' ]"
+    run_test "Starship configuration template exists" "[ -f 'templates/starship.toml.j2' ]"
+    
+    # Check template content structure
+    run_test "zshrc template has history config" "grep -q 'HISTSIZE' 'templates/zshrc-basic.j2'"
+    run_test "zshrc template has completion" "grep -q 'compinit' 'templates/zshrc-basic.j2'"
+    run_test "Aliases template has git aliases" "grep -q 'enable_git_aliases' 'templates/zsh-aliases.j2'"
+    run_test "Exports template has PATH config" "grep -q 'PATH=' 'templates/zsh-exports.j2'"
+    run_test "Functions template has common functions" "grep -q 'enable_common_functions' 'templates/zsh-functions.j2'"
+}
+
+validate_shell_configuration_tasks() {
+    log_info "Validating shell configuration tasks..."
+    
+    local shell_playbook="playbooks/common/shell.yml"
+    
+    # Check configuration file generation
+    run_test "zshrc generation task" "grep -q 'Generate comprehensive .zshrc' '$shell_playbook'"
+    run_test "Exports configuration task" "grep -q 'Generate shell exports configuration' '$shell_playbook'"
+    run_test "Aliases configuration task" "grep -q 'Generate shell aliases configuration' '$shell_playbook'"
+    run_test "Functions configuration task" "grep -q 'Generate shell functions configuration' '$shell_playbook'"
+    
+    # Check advanced features
+    run_test "FZF integration task" "grep -q 'Install fzf if enabled' '$shell_playbook'"
+    run_test "Starship prompt setup" "grep -q 'Setup Starship prompt' '$shell_playbook'"
+    run_test "asdf integration setup" "grep -q 'Create asdf integration file' '$shell_playbook'"
+    run_test "direnv integration setup" "grep -q 'Create direnv integration file' '$shell_playbook'"
+}
+
+validate_development_tool_integration() {
+    log_info "Validating development tool integration..."
+    
+    local shell_playbook="playbooks/common/shell.yml"
+    
+    # Check tool integrations
+    run_test "Development tool completions" "grep -q 'Setup development tool completions' '$shell_playbook'"
+    run_test "Docker completion integration" "grep -q 'Create Docker completion integration' '$shell_playbook'"
+    run_test "Git integration setup" "grep -q 'Setup Git integration' '$shell_playbook'"
+    run_test "Performance optimizations" "grep -q 'Create performance optimization file' '$shell_playbook'"
+}
+
+validate_customization_and_utilities() {
+    log_info "Validating customization and utilities..."
+    
+    local shell_playbook="playbooks/common/shell.yml"
+    
+    # Check customization features
+    run_test "Customization guide creation" "grep -q 'Create customization guide' '$shell_playbook'"
+    run_test "Shell health check script" "grep -q 'Create shell health check script' '$shell_playbook'"
+    run_test "Configuration completion logging" "grep -q 'Log shell configuration completion' '$shell_playbook'"
+    run_test "Configuration summary display" "grep -q 'Display shell configuration summary' '$shell_playbook'"
+}
+
+validate_template_syntax() {
+    log_info "Validating template syntax..."
+    
+    # Check for basic Jinja2 syntax in templates
+    run_test "zshrc template has conditionals" "grep -q '{%' 'templates/zshrc-basic.j2'"
+    run_test "Aliases template has conditionals" "grep -q '{%.*if' 'templates/zsh-aliases.j2'"
+    run_test "Exports template has variables" "grep -q '{{' 'templates/zsh-exports.j2'"
+    run_test "Functions template has conditionals" "grep -q '{%.*if' 'templates/zsh-functions.j2'"
+    run_test "Starship template is properly formatted" "grep -q 'format =' 'templates/starship.toml.j2'"
+}
+
+validate_cross_platform_support() {
+    log_info "Validating cross-platform support..."
+    
+    # Check for platform-specific logic in templates
+    run_test "Aliases template has platform logic" "grep -q 'ansible_os_family' 'templates/zsh-aliases.j2'"
+    run_test "Exports template has macOS paths" "grep -q '/opt/homebrew' 'templates/zsh-exports.j2'"
+    run_test "Functions template has platform detection" "grep -q 'ansible_os_family' 'templates/zsh-functions.j2'"
+    
+    # Check shell playbook platform handling
+    run_test "Shell playbook has platform conditionals" "grep -q 'ansible_os_family' 'playbooks/common/shell.yml'"
+}
+
+validate_performance_features() {
+    log_info "Validating performance features..."
+    
+    local shell_vars="inventory/group_vars/all.yml"
+    local shell_playbook="playbooks/common/shell.yml"
+    
+    # Check performance configuration options
+    run_test "Startup time optimization" "grep -q 'optimize_startup_time:' '$shell_vars'"
+    run_test "Lazy loading completions" "grep -q 'lazy_load_completions:' '$shell_vars'"
+    run_test "Performance optimization task" "grep -q 'performance optimization' '$shell_playbook'"
+    
+    # Check zshrc template performance features
+    run_test "zshrc template has performance opts" "grep -q 'compinit' 'templates/zshrc-basic.j2'"
+}
+
+validate_security_and_privacy() {
+    log_info "Validating security and privacy features..."
+    
+    # Check for security-conscious defaults
+    run_test "History ignores sensitive commands" "grep -q 'HISTIGNORE' 'templates/zsh-exports.j2'"
+    run_test "Homebrew analytics disabled" "grep -q 'HOMEBREW_NO_ANALYTICS' 'templates/zsh-exports.j2'"
+    run_test "Secure file permissions" "grep -q 'mode.*0644' 'playbooks/common/shell.yml'"
+    run_test "Private directory permissions" "grep -q 'mode.*0755' 'playbooks/common/shell.yml'"
+}
+
+validate_comprehensive_aliases() {
+    log_info "Validating comprehensive alias system..."
+    
+    local aliases_template="templates/zsh-aliases.j2"
+    
+    # Check for alias categories
+    run_test "Common aliases included" "grep -q 'Common aliases' '$aliases_template'"
+    run_test "Git aliases comprehensive" "grep -q 'git status' '$aliases_template' && grep -q 'git commit' '$aliases_template' && grep -q 'git push' '$aliases_template'"
+    run_test "Platform-specific aliases" "grep -q 'Platform-specific aliases' '$aliases_template'"
+    run_test "Docker aliases available" "grep -q 'Docker aliases' '$aliases_template'"
+    run_test "Safety aliases included" "grep -q 'Safety aliases' '$aliases_template'"
+    run_test "Development aliases present" "grep -q 'Development aliases' '$aliases_template'"
+}
+
+validate_shell_functions() {
+    log_info "Validating shell functions..."
+    
+    local functions_template="templates/zsh-functions.j2"
+    
+    # Check for function categories
+    run_test "Archive extraction function" "grep -q 'extract()' '$functions_template'"
+    run_test "Directory creation function" "grep -q 'mkcd()' '$functions_template'"
+    run_test "Git utility functions" "grep -q 'gitignore()' '$functions_template'"
+    run_test "Development functions" "grep -q 'serve()' '$functions_template'"
+    run_test "Navigation functions" "grep -q 'up()' '$functions_template'"
+    run_test "System information functions" "grep -q 'sysinfo()' '$functions_template'"
+    run_test "Network utility functions" "grep -q 'myip()' '$functions_template'"
+}
+
+validate_integration_with_other_phases() {
+    log_info "Validating integration with other phases..."
+    
+    # Check that shell configuration is called from main playbook
+    run_test "Main playbook includes shell tasks" "grep -q 'shell.yml' 'playbooks/main.yml'"
+    
+    # Check integration with platform packages
+    run_test "Linux shell packages defined" "grep -q 'shell_packages:' 'inventory/group_vars/linux.yml'"
+    run_test "macOS shell packages defined" "grep -q 'shell_packages:' 'inventory/group_vars/macos.yml'"
+}
+
+validate_yaml_syntax() {
+    log_info "Validating YAML syntax..."
+    
+    # Check YAML syntax if Python is available
+    if command -v python3 >/dev/null 2>&1; then
+        run_test "Shell configuration variables syntax" "python3 -c 'import yaml; yaml.safe_load(open(\"inventory/group_vars/all.yml\"))'"
+        run_test "Shell playbook YAML syntax" "python3 -c 'import yaml; yaml.safe_load(open(\"playbooks/common/shell.yml\"))'"
+    else
+        log_warning "Python3 not available, skipping YAML syntax validation"
+    fi
+}
+
+# Main validation execution
+main() {
+    log_info "Starting Shell Phase 4 validation..."
+    log_info "========================================="
+    
+    # Run all validation functions
+    validate_shell_configuration_variables
+    validate_shell_playbook_structure
+    validate_template_files
+    validate_shell_configuration_tasks
+    validate_development_tool_integration
+    validate_customization_and_utilities
+    validate_template_syntax
+    validate_cross_platform_support
+    validate_performance_features
+    validate_security_and_privacy
+    validate_comprehensive_aliases
+    validate_shell_functions
+    validate_integration_with_other_phases
+    validate_yaml_syntax
+    
+    # Summary
+    echo
+    log_info "========================================="
+    log_info "Validation Summary"
+    log_info "========================================="
+    log_info "Total tests: $TOTAL_TESTS"
+    log_success "Passed: $PASSED_TESTS"
+    
+    if [ $FAILED_TESTS -gt 0 ]; then
+        log_error "Failed: $FAILED_TESTS"
+        echo
+        log_error "Some validations failed. Please review the shell implementation."
+        exit 1
+    else
+        echo
+        log_success "All Shell Phase 4 validations passed!"
+        log_info "Shell configuration system is ready for testing."
+        exit 0
+    fi
+}
+
+# Check if running from the correct directory
+if [ ! -f "playbook.yml" ]; then
+    log_error "This script must be run from the project root directory"
+    exit 1
+fi
+
+main "$@" 

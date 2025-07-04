@@ -1,0 +1,54 @@
+---
+- name: Python environment configuration
+  block:
+    - name: Check if Python is available
+      command: python3 --version
+      register: python_version
+      failed_when: false
+      changed_when: false
+      
+    - name: Display Python version
+      debug:
+        msg: "Python version: {{ python_version.stdout }}"
+      when: python_version.rc == 0
+      
+    - name: Check if pip is available
+      command: python3 -m pip --version
+      register: pip_version
+      failed_when: false
+      changed_when: false
+      
+    - name: Display pip version
+      debug:
+        msg: "pip version: {{ pip_version.stdout }}"
+      when: pip_version.rc == 0
+      
+    - name: Install/upgrade pip
+      command: python3 -m pip install --user --upgrade pip
+      when: 
+        - python_version.rc == 0
+        - python.install_development_tools | default(true)
+      
+    - name: Install basic Python development tools
+      command: python3 -m pip install --user --upgrade {{ item }}
+      loop:
+        - virtualenv
+        - wheel
+        - setuptools
+      when: 
+        - python_version.rc == 0
+        - python.install_development_tools | default(true)
+      ignore_errors: yes
+      
+    - name: Add Python user bin to PATH in .zshrc
+      lineinfile:
+        path: "{{ ansible_env.HOME }}/.zshrc"
+        line: 'export PATH="$HOME/.local/bin:$PATH"'
+        create: yes
+        backup: yes
+      when: python_version.rc == 0
+      
+  rescue:
+    - name: Log Python configuration failure
+      debug:
+        msg: "Python configuration failed: {{ ansible_failed_result.msg }}" 

@@ -1,0 +1,163 @@
+---
+# Debian/Ubuntu/Pop!_OS-specific configuration tasks
+- name: Display distribution information
+  debug:
+    msg: "Configuring {{ ansible_distribution }} {{ ansible_distribution_version }} with APT package manager"
+    
+- name: Update apt package cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  become: yes
+  register: apt_update_result
+  
+- name: Install security updates
+  apt:
+    upgrade: safe
+    update_cache: no
+  become: yes
+  when: system.install_security_updates | default(false)
+  register: security_updates
+  
+- name: Display security updates status
+  debug:
+    msg: "{{ security_updates.stdout_lines | default(['No security updates applied']) | join('\n') }}"
+  when: security_updates is defined
+  
+- name: Configure additional apt repositories
+  block:
+    - name: Add universe repository (Ubuntu)
+      apt_repository:
+        repo: "{{ item }}"
+        state: present
+        update_cache: no
+      loop:
+        - "deb http://archive.ubuntu.com/ubuntu {{ ansible_distribution_release }} universe"
+        - "deb http://archive.ubuntu.com/ubuntu {{ ansible_distribution_release }}-updates universe"
+      become: yes
+      when: ansible_distribution == "Ubuntu"
+      
+    - name: Add contrib and non-free repositories (Debian)
+      apt_repository:
+        repo: "{{ item }}"
+        state: present
+        update_cache: no
+      loop:
+        - "deb http://deb.debian.org/debian {{ ansible_distribution_release }} contrib non-free"
+        - "deb http://deb.debian.org/debian {{ ansible_distribution_release }}-updates contrib non-free"
+      become: yes
+      when: ansible_distribution == "Debian"
+  rescue:
+    - name: Log repository configuration failure
+      debug:
+        msg: "Repository configuration failed: {{ ansible_failed_result.msg }}"
+        
+- name: Install essential development packages
+  apt:
+    name: "{{ essential_packages }}"
+    state: present
+    install_recommends: no
+  become: yes
+  vars:
+    essential_packages:
+      - build-essential
+      - cmake
+      - pkg-config
+      - software-properties-common
+      - apt-transport-https
+      - ca-certificates
+      - gnupg
+      - lsb-release
+      - curl
+      - wget
+      
+- name: Install common packages
+  apt:
+    name: "{{ common_packages }}"
+    state: present
+    install_recommends: no
+  become: yes
+  
+- name: Install Linux-specific packages
+  apt:
+    name: "{{ linux_packages.apt | default([]) }}"
+    state: present
+    install_recommends: no
+  become: yes
+  when: linux_packages.apt is defined
+  
+- name: Install shell packages
+  apt:
+    name: "{{ shell_packages.apt | default([]) }}"
+    state: present
+    install_recommends: no
+  become: yes
+  when: shell_packages.apt is defined
+  
+- name: Configure APT preferences
+  copy:
+    dest: /etc/apt/preferences.d/99-init-preferences
+    mode: '0644'
+    content: |
+      # Prefer packages from main distribution
+      Package: *
+      Pin: release a={{ ansible_distribution_release }}
+      Pin-Priority: 990
+      
+      # Lower priority for backports
+      Package: *
+      Pin: release a={{ ansible_distribution_release }}-backports
+      Pin-Priority: 400
+  become: yes
+  
+- name: Configure automatic security updates
+  block:
+    - name: Install unattended-upgrades
+      apt:
+        name: unattended-upgrades
+        state: present
+      become: yes
+      
+    - name: Configure unattended-upgrades
+      template:
+        src: 50unattended-upgrades.j2
+        dest: /etc/apt/apt.conf.d/50unattended-upgrades
+        mode: '0644'
+        backup: yes
+      become: yes
+      vars:
+        enable_security_updates: "{{ system.install_security_updates | default(true) }}"
+  when: system.install_security_updates | default(false)
+  rescue:
+    - name: Log unattended-upgrades configuration failure
+      debug:
+        msg: "Unattended-upgrades configuration failed: {{ ansible_failed_result.msg }}"
+      
+- name: Clean apt cache
+  apt:
+    autoclean: yes
+  become: yes
+  
+- name: Remove unnecessary packages
+  apt:
+    autoremove: yes
+    purge: yes
+  become: yes
+  
+  rescue:
+    - name: Log APT configuration failure
+      debug:
+        msg: "APT configuration failed: {{ ansible_failed_result.msg }}"
+        
+    - name: Display troubleshooting information
+      debug:
+        msg: |
+          APT configuration failed. Troubleshooting steps:
+          1. Check internet connectivity: ping archive.ubuntu.com
+          2. Verify repository accessibility: sudo apt update
+          3. Check disk space: df -h
+          4. Review APT logs: sudo journalctl -u apt
+          
+    - name: Fail with detailed error
+      fail:
+        msg: "APT-based Linux configuration failed. See troubleshooting information above." 

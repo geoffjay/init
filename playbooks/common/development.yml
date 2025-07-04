@@ -1,0 +1,52 @@
+---
+- name: Development tools configuration
+  block:
+    - name: Configure git user if not set
+      block:
+        - name: Check if git user.name is set
+          command: git config --global user.name
+          register: git_username
+          failed_when: false
+          changed_when: false
+          
+        - name: Check if git user.email is set
+          command: git config --global user.email
+          register: git_email
+          failed_when: false
+          changed_when: false
+          
+        - name: Display git configuration status
+          debug:
+            msg: |
+              Git configuration status:
+              - Username: {{ 'Set' if git_username.rc == 0 else 'Not set' }}
+              - Email: {{ 'Set' if git_email.rc == 0 else 'Not set' }}
+              
+              Note: Configure git manually with:
+              git config --global user.name "Your Name"
+              git config --global user.email "your.email@example.com"
+          when: git_username.rc != 0 or git_email.rc != 0
+          
+      when: development.configure_git | default(true)
+      
+    - name: Create development directories
+      file:
+        path: "{{ ansible_env.HOME }}/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "Projects"
+        - ".local/bin"
+        - ".config"
+        
+    - name: Add ~/.local/bin to PATH in .zshrc
+      lineinfile:
+        path: "{{ ansible_env.HOME }}/.zshrc"
+        line: 'export PATH="$HOME/.local/bin:$PATH"'
+        create: yes
+        backup: yes
+        
+  rescue:
+    - name: Log development configuration failure
+      debug:
+        msg: "Development configuration failed: {{ ansible_failed_result.msg }}" 

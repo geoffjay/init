@@ -1,0 +1,157 @@
+---
+# Alpine Linux-specific configuration tasks
+- name: Display distribution information
+  debug:
+    msg: "Configuring Alpine Linux {{ ansible_distribution_version }} with APK package manager"
+    
+- name: Update apk package cache
+  apk:
+    update_cache: yes
+  become: yes
+  register: apk_update_result
+  
+- name: Configure APK repositories
+  block:
+    - name: Add community repository
+      lineinfile:
+        path: /etc/apk/repositories
+        line: "{{ alpine_repo_base }}/{{ ansible_distribution_version }}/community"
+        create: no
+      become: yes
+      vars:
+        alpine_repo_base: "https://dl-cdn.alpinelinux.org/alpine"
+        
+    - name: Add edge testing repository (optional)
+      lineinfile:
+        path: /etc/apk/repositories
+        line: "https://dl-cdn.alpinelinux.org/alpine/edge/testing"
+        create: no
+      become: yes
+      when: system.enable_edge_repos | default(false)
+  rescue:
+    - name: Log repository configuration failure
+      debug:
+        msg: "Repository configuration failed: {{ ansible_failed_result.msg }}"
+        
+- name: Upgrade system packages
+  apk:
+    upgrade: yes
+    update_cache: no
+  become: yes
+  when: system.install_security_updates | default(false)
+  register: system_upgrade
+  
+- name: Display upgrade status
+  debug:
+    msg: "{{ system_upgrade.stdout_lines | default(['No system upgrades applied']) | join('\n') }}"
+  when: system_upgrade is defined
+  
+- name: Install essential development packages
+  apk:
+    name: "{{ essential_packages }}"
+    state: present
+  become: yes
+  vars:
+    essential_packages:
+      - alpine-sdk
+      - cmake
+      - pkgconf
+      - ca-certificates
+      - openssl-dev
+      - libffi-dev
+      - linux-headers
+      - musl-dev
+      - gcc
+      - g++
+      
+- name: Install common packages
+  apk:
+    name: "{{ common_packages }}"
+    state: present
+  become: yes
+  
+- name: Install Linux-specific packages
+  apk:
+    name: "{{ linux_packages.apk | default([]) }}"
+    state: present
+  become: yes
+  when: linux_packages.apk is defined
+  
+- name: Install shell packages
+  apk:
+    name: "{{ shell_packages.apk | default([]) }}"
+    state: present
+  become: yes
+  when: shell_packages.apk is defined
+  
+- name: Configure APK cache settings
+  lineinfile:
+    path: /etc/apk/apk.conf
+    line: "{{ item }}"
+    create: yes
+    mode: '0644'
+  loop:
+    - "cache-dir /var/cache/apk"
+    - "cache-max-age 300"
+  become: yes
+  
+- name: Enable APK cache
+  file:
+    path: /var/cache/apk
+    state: directory
+    mode: '0755'
+  become: yes
+  
+- name: Configure system services
+  block:
+    - name: Enable and start chronyd (time synchronization)
+      service:
+        name: chronyd
+        state: started
+        enabled: yes
+      become: yes
+      ignore_errors: yes
+      
+    - name: Enable and start syslog
+      service:
+        name: syslog
+        state: started
+        enabled: yes
+      become: yes
+      ignore_errors: yes
+  rescue:
+    - name: Log service configuration failure
+      debug:
+        msg: "Service configuration failed: {{ ansible_failed_result.msg }}"
+        
+- name: Configure Alpine-specific optimizations
+  block:
+    - name: Set up faster mirror
+      replace:
+        path: /etc/apk/repositories
+        regexp: 'dl-cdn\.alpinelinux\.org'
+        replace: 'mirror.yandex.ru/mirrors'
+      become: yes
+      when: system.use_fast_mirrors | default(false)
+      
+    - name: Configure musl locale
+      lineinfile:
+        path: /etc/profile.d/locale.sh
+        line: 'export LANG=C.UTF-8'
+        create: yes
+        mode: '0644'
+      become: yes
+      
+    - name: Set timezone
+      timezone:
+        name: "{{ system.timezone | default('UTC') }}"
+      become: yes
+  rescue:
+    - name: Log optimization configuration failure
+      debug:
+        msg: "Optimization configuration failed: {{ ansible_failed_result.msg }}"
+      
+- name: Clean apk cache
+  command: apk cache clean
+  become: yes
+  changed_when: false 

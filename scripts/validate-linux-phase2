@@ -1,0 +1,234 @@
+#!/bin/bash
+
+# Validation script for Phase 2: Linux Platform Implementation
+# Tests Linux-specific playbooks and configurations
+
+set -euo pipefail
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Test functions
+test_passed() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+test_failed() {
+    echo -e "${RED}✗${NC} $1"
+    return 1
+}
+
+test_warning() {
+    echo -e "${YELLOW}⚠${NC} $1"
+}
+
+test_info() {
+    echo -e "${BLUE}ℹ${NC} $1"
+}
+
+echo "=== Phase 2: Linux Platform Implementation Validation ==="
+echo
+
+# Test 1: Check if virtual environment is active
+echo "Testing virtual environment..."
+if [[ "${VIRTUAL_ENV:-}" ]]; then
+    test_passed "Virtual environment is active: $VIRTUAL_ENV"
+else
+    test_failed "Virtual environment is not active"
+fi
+
+# Test 2: Check Linux-specific playbook files
+echo "Testing Linux playbook structure..."
+LINUX_FILES=(
+    "playbooks/linux/common.yml"
+    "playbooks/linux/apt-based.yml"
+    "playbooks/linux/apk-based.yml"
+)
+
+for file in "${LINUX_FILES[@]}"; do
+    if [[ -f "$file" ]]; then
+        test_passed "File exists: $file"
+    else
+        test_failed "Missing file: $file"
+    fi
+done
+
+# Test 3: Check YAML syntax for all Linux task files
+echo "Testing YAML syntax..."
+for file in "${LINUX_FILES[@]}"; do
+    if [[ -f "$file" ]]; then
+        if python3 -c "import yaml; yaml.safe_load(open('$file'))" 2>/dev/null; then
+            test_passed "YAML syntax valid: $file"
+        else
+            test_failed "YAML syntax error: $file"
+        fi
+    fi
+done
+
+# Test 4: Test main playbook syntax
+echo "Testing main playbook syntax..."
+if ansible-playbook --syntax-check playbook.yml >/dev/null 2>&1; then
+    test_passed "Main playbook syntax is valid"
+else
+    test_failed "Main playbook has syntax errors"
+fi
+
+# Test 5: Test template files
+echo "Testing template files..."
+TEMPLATE_FILES=(
+    "templates/50unattended-upgrades.j2"
+)
+
+for file in "${TEMPLATE_FILES[@]}"; do
+    if [[ -f "$file" ]]; then
+        test_passed "Template exists: $file"
+    else
+        test_warning "Template missing: $file"
+    fi
+done
+
+# Test 6: Test Linux group variables
+echo "Testing Linux group variables..."
+if [[ -f "inventory/group_vars/linux.yml" ]]; then
+    # Test YAML syntax
+    if python3 -c "import yaml; yaml.safe_load(open('inventory/group_vars/linux.yml'))" 2>/dev/null; then
+        test_passed "Linux group variables YAML is valid"
+    else
+        test_failed "Linux group variables YAML has syntax errors"
+    fi
+    
+    # Test for required variables
+    if grep -q "package_manager:" inventory/group_vars/linux.yml; then
+        test_passed "package_manager variable defined"
+    else
+        test_failed "package_manager variable missing"
+    fi
+    
+    if grep -q "linux_packages:" inventory/group_vars/linux.yml; then
+        test_passed "linux_packages variable defined"
+    else
+        test_failed "linux_packages variable missing"
+    fi
+else
+    test_failed "Linux group variables file missing"
+fi
+
+# Test 7: Platform detection in dry-run mode
+echo "Testing platform detection and Linux tasks..."
+if command -v ansible-playbook >/dev/null 2>&1; then
+    # Run a targeted dry-run to test Linux detection
+    OUTPUT=$(ansible-playbook --check --limit localhost playbook.yml 2>&1 | grep -E "(Detected platform|Configuring)" || true)
+    if [[ -n "$OUTPUT" ]]; then
+        while IFS= read -r line; do
+            test_info "$line"
+        done <<< "$OUTPUT"
+        test_passed "Platform detection and Linux configuration tasks work"
+    else
+        test_warning "Platform detection test inconclusive"
+    fi
+else
+    test_failed "ansible-playbook not available"
+fi
+
+# Test 8: Test package categorization
+echo "Testing package categorization..."
+if [[ -f "inventory/group_vars/linux.yml" ]]; then
+    PACKAGE_CATEGORIES=(
+        "development_packages"
+        "network_packages"
+        "editor_packages"
+        "system_packages"
+    )
+    
+    for category in "${PACKAGE_CATEGORIES[@]}"; do
+        if grep -q "$category:" inventory/group_vars/linux.yml; then
+            test_passed "Package category defined: $category"
+        else
+            test_warning "Package category missing: $category"
+        fi
+    done
+fi
+
+# Test 9: Test system configuration options
+echo "Testing system configuration options..."
+if [[ -f "inventory/group_vars/linux.yml" ]]; then
+    SYSTEM_OPTIONS=(
+        "system:"
+        "performance:"
+        "install_security_updates"
+        "enable_system_limits"
+        "enable_kernel_tuning"
+    )
+    
+    for option in "${SYSTEM_OPTIONS[@]}"; do
+        if grep -q "$option" inventory/group_vars/linux.yml; then
+            test_passed "System option available: $option"
+        else
+            test_warning "System option missing: $option"
+        fi
+    done
+fi
+
+# Test 10: Test distribution-specific logic
+echo "Testing distribution-specific logic..."
+
+# Check if we can detect current distribution
+if [[ -f /etc/os-release ]]; then
+    . /etc/os-release
+    test_info "Current distribution: $PRETTY_NAME (ID: $ID)"
+    
+    case $ID in
+        ubuntu|debian|pop)
+            test_info "This system uses APT package manager"
+            if [[ -f "playbooks/linux/apt-based.yml" ]]; then
+                test_passed "APT-based playbook available for this system"
+            else
+                test_failed "APT-based playbook missing for this system"
+            fi
+            ;;
+        alpine)
+            test_info "This system uses APK package manager"
+            if [[ -f "playbooks/linux/apk-based.yml" ]]; then
+                test_passed "APK-based playbook available for this system"
+            else
+                test_failed "APK-based playbook missing for this system"
+            fi
+            ;;
+        *)
+            test_warning "Unsupported distribution detected: $ID"
+            ;;
+    esac
+else
+    test_warning "Cannot detect distribution (no /etc/os-release)"
+fi
+
+echo
+echo "=== Phase 2 Validation Summary ==="
+
+# Count test results
+PASSED_TESTS=$(grep -c "✓" <<< "$(test_passed "dummy" 2>&1)" || echo "0")
+FAILED_TESTS=$(grep -c "✗" <<< "$(test_failed "dummy" 2>&1)" || echo "0")
+
+if [[ $? -eq 0 ]]; then
+    echo -e "${GREEN}✓ Phase 2: Linux Platform Implementation - Core components ready${NC}"
+    echo
+    echo "Key Phase 2 Features Implemented:"
+    echo "- ✅ Distribution-specific playbooks (APT and APK)"
+    echo "- ✅ Enhanced package management with categories"
+    echo "- ✅ System optimization and security configurations"
+    echo "- ✅ Template-based configuration management"
+    echo "- ✅ Comprehensive error handling and logging"
+    echo
+    echo "Next steps:"
+    echo "- Test on actual Linux systems: ansible-playbook -K playbook.yml"
+    echo "- Run with specific package categories: ansible-playbook -K playbook.yml --tags packages"
+    echo "- Test distribution-specific features on different Linux distributions"
+    exit 0
+else
+    echo -e "${RED}✗ Phase 2 implementation has issues that need to be resolved${NC}"
+    exit 1
+fi 

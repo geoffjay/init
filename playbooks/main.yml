@@ -1,0 +1,56 @@
+---
+# Main system orchestration tasks
+- name: Set orchestration variables
+  set_fact:
+    log_timestamp: "{{ ansible_date_time.epoch }}"
+
+- name: Create logs directory
+  file:
+    path: "{{ project.root }}/logs"
+    state: directory
+    mode: '0755'
+  when: project.root is defined
+  
+- name: Log orchestration start
+  debug:
+    msg: "Starting system orchestration at {{ ansible_date_time.iso8601 }}"
+    
+- name: Validate platform detection
+  assert:
+    that:
+      - package_manager is defined
+      - package_manager != "unknown"
+    fail_msg: "Package manager could not be detected for {{ ansible_distribution }}"
+    success_msg: "Package manager detected: {{ package_manager }}"
+
+- name: Include platform-specific playbooks
+  include_tasks: "{{ item }}"
+  with_first_found:
+    - files:
+        - "{{ os_family }}/{{ ansible_distribution | lower }}.yml"
+        - "{{ os_family }}/common.yml"
+      paths:
+        - "{{ playbook_dir }}/playbooks"
+      skip: false
+  vars:
+    current_platform: "{{ os_family }}/{{ ansible_distribution | lower }}"
+    
+- name: Include common cross-platform tasks
+  include_tasks: common/shell.yml
+  when: shell is defined
+  
+- name: Include development tools setup
+  include_tasks: common/development.yml
+  when: development is defined
+  
+- name: Include Python environment setup
+  include_tasks: common/python.yml
+  when: python is defined
+  
+- name: Validate system state
+  debug:
+    msg: "System orchestration completed successfully"
+    
+- name: Log orchestration completion
+  debug:
+    msg: "Orchestration completed at {{ ansible_date_time.iso8601 }}" 

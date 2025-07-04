@@ -80,7 +80,7 @@ common_packages:
   - git
   - curl
   - wget
-  - vim
+  - neovim
   - unzip
   - tar
 
@@ -203,51 +203,7 @@ macos_packages:
 - Validate command completion and history
 - Test integration with asdf and direnv
 
-### Phase 5: Development Tools Installation
-**Timeline**: 3-4 hours
-**Priority**: Medium
-
-**Tasks**:
-- [ ] Implement `playbooks/common/development.yml`
-- [ ] Install essential development tools via package managers
-- [ ] Configure development tool settings
-- [ ] Implement platform-specific development tools
-- [ ] Add version control configuration (git global settings)
-- [ ] Configure text editors (vim, nano)
-
-**Deliverables**:
-- Complete development environment setup
-- Essential tools available across platforms
-- Configured development tools
-
-**Testing**:
-- Verify all development tools are installed and functional
-- Test cross-platform consistency
-- Validate tool configurations
-
-### Phase 6: Python Environment Integration
-**Timeline**: 3-4 hours
-**Priority**: Medium
-
-**Tasks**:
-- [ ] Implement `playbooks/common/python.yml`
-- [ ] Ensure Python virtual environment integration
-- [ ] Configure pip and package management
-- [ ] Integrate with asdf Python version management
-- [ ] Add Python development tools
-- [ ] Configure Python path and environment variables
-
-**Deliverables**:
-- Integrated Python environment management
-- Virtual environment support
-- Python development tools
-
-**Testing**:
-- Verify Python virtual environment activation
-- Test Python package installations
-- Validate asdf Python integration
-
-### Phase 7: Integration and Testing
+### Phase 5: Integration and Testing
 **Timeline**: 6-8 hours
 **Priority**: Critical
 
